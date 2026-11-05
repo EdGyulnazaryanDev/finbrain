@@ -1359,6 +1359,7 @@ let IMP=null,IMPopt={replace:true,debts:true,salary:true,expenses:true,mortgage:
 function vImport(){
   return `<div class="card"><h2>📥 ${T('Импорт из Excel','Import from Excel','Ներմուծում Excel-ից')}</h2>
     <p class="sub">${T('Загрузите таблицу с планом долгов (.xlsx): листы «Долги», «Настройки», «План». Сначала увидите, что будет добавлено, и только потом подтвердите.','Upload a debt-plan spreadsheet (.xlsx) with “Debts”, “Settings”, “Plan” sheets. You’ll see a preview before anything is added.','Վերբեռնեք պարտքերի պլանի աղյուսակը (.xlsx)՝ «Պարտքեր», «Կարգավորումներ», «Պլան» թերթերով։ Նախ կտեսնեք, թե ինչ կավելացվի, և միայն հետո կհաստատեք։')}</p>
+    <p class="sub">📄 <a href="/samples/finbrain-template.xlsx" download style="color:var(--brand);font-weight:600">${T('Скачать шаблон с примером','Download the sample template','Ներբեռնել օրինակով ձևանմուշը')}</a> — ${T('в нём лист «Инструкция»: что и куда писать.','it has an “Instructions” sheet explaining what goes where.','այնտեղ «Հրահանգ» թերթում բացատրված է՝ ինչ և որտեղ գրել։')}</p>
     <input type="file" id="impfile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
     <p id="impstatus" class="sub">${esc(IMPmsg)}</p></div><div id="impout">${impOut()}</div>`;
 }
@@ -1367,7 +1368,8 @@ function ymToMonth(s){const [y,m]=s.split('-').map(Number),t=new Date();return M
 function impBuild(){
   const r=IMP,o=IMPopt,src='xlsx',b={loans:[],incomes:[],expenses:[],accounts:[],events:[],reminders:[]};
   if(o.debts)for(const d of r.debts){const n=Math.max(1,d.schedule.length);const rocket=/rocket|line/i.test(d.type);
-    b.loans.push({name:(d.type.replace(/\s*\d+[.,]?\d*\s*%/,'').replace(/,\s*$/,'').trim()||T('Кредит','Loan','Վարկ'))+' · '+shortContract(d.contract),bank:rocket?'Rocket Line':'',type:rocket?'card':'consumer',balance:Math.round(d.balance*100)/100,rate:d.rate,payment:Math.ceil(d.balance/n*(1+d.rate/1200)),day:d.due?+d.due.slice(8,10):1,contract:d.contract,schedule:d.schedule,src})}
+    const tcl=d.type.replace(/\s*\d+[.,]?\d*\s*%/,'').replace(/,\s*$/,'').trim(),txt2=d.type+' '+d.contract,human=/[a-zа-яё]{3,}\s/i.test(d.contract)&&!/\d{5,}/.test(d.contract);
+    b.loans.push({name:human?d.contract:(tcl||T('Кредит','Loan','Վարկ'))+' · '+shortContract(d.contract),bank:rocket?'Rocket Line':(txt2.match(/ameriabank|ardshinbank|acba|inecobank|evocabank|idbank|unibank|araratbank|amio bank|fast bank|vtb|converse bank|armeconombank/i)||[''])[0],type:/ипотек|mortgage/i.test(txt2)?'mortgage':/авто|car/i.test(txt2)?'car':/карт|card|rocket|line/i.test(txt2)?'card':/микро|payday/i.test(txt2)?'short':/знаком|друг|брат|сестр|родител|friend/i.test(txt2)?'other':'consumer',balance:Math.round(d.balance*100)/100,rate:d.rate,payment:Math.ceil(d.balance/n*(1+d.rate/1200)),day:d.due?+d.due.slice(8,10):1,contract:d.contract,schedule:d.schedule,src})}
   const s=r.settings||{};
   if(o.salary&&s.salary)b.incomes.push({name:T('Зарплата','Salary','Աշխատավարձ'),amount:s.salary,src});
   if(o.expenses)(s.expenses||[]).forEach(e=>b.expenses.push({name:e.name,cat:CATS[e.cat]?e.cat:'other',amount:e.amount,src}));
@@ -1417,11 +1419,14 @@ async function impUpload(file){
 function impApply(){
   const b=impBuild();
   if(IMPopt.replace){S.loans=S.loans.filter(x=>x.src!=='xlsx');S.incomes=S.incomes.filter(x=>x.src!=='xlsx');S.expenses=S.expenses.filter(x=>x.src!=='xlsx');remList().splice(0,remList().length,...remList().filter(x=>x.src!=='xlsx'));FC().events=FC().events.filter(x=>x.src!=='xlsx')}
-  S.loans.push(...b.loans);S.incomes.push(...b.incomes);S.expenses.push(...b.expenses);remList().push(...b.reminders);FC().events.push(...b.events);
+  const nm=x=>String(x||'').trim().toLowerCase(),dup=[];
+  const add=(arr,items,key)=>{for(const it of items){if(arr.some(x=>x.src!=='xlsx'&&nm(key(x))===nm(key(it)))){dup.push(key(it));continue}arr.push(it)}};
+  add(S.loans,b.loans,x=>x.contract||x.name);add(S.incomes,b.incomes,x=>x.name);add(S.expenses,b.expenses,x=>x.name);add(remList(),b.reminders,x=>x.title);FC().events.push(...b.events);
+  b.accounts=b.accounts.filter(a=>{const ex=S.accounts.some(x=>x.src!=='xlsx'&&(a.type==='cash'?x.type==='cash':nm(x.bank)===nm(a.bank)));if(ex)dup.push(a.bank);return !ex});
   for(const a of b.accounts){const ex=S.accounts.findIndex(x=>x.src==='xlsx'&&x.type===a.type&&x.bank===a.bank);const {target,...acc}=a;let idx;
     if(ex>=0){S.accounts[ex].balance=acc.balance;S.accounts[ex].rate=acc.rate;idx=ex}else{S.accounts.push(acc);idx=S.accounts.length-1}
     if(target)FC().target=idx}
-  const n=b.loans.length;IMP=null;IMPopt.mBal=0;IMPopt.mRate=0;IMPmsg='✓ '+T(`Добавлено: кредитов ${n}, доходов ${b.incomes.length}, расходов ${b.expenses.length}, счетов ${b.accounts.length}, событий прогноза ${b.events.length}, напоминаний ${b.reminders.length}.`,`Added: ${n} loans, ${b.incomes.length} incomes, ${b.expenses.length} expenses, ${b.accounts.length} accounts, ${b.events.length} forecast events, ${b.reminders.length} reminders.`,`Ավելացվեց՝ ${n} վարկ, ${b.incomes.length} եկամուտ, ${b.expenses.length} ծախս, ${b.accounts.length} հաշիվ, ${b.events.length} կանխատեսման իրադարձություն, ${b.reminders.length} հիշեցում։`);
+  const n=b.loans.length;IMP=null;IMPopt.mBal=0;IMPopt.mRate=0;IMPmsg=(dup.length?'⚠️ '+T(`Уже были, не дублировал: ${dup.join(', ')}. `,`Already existed, not duplicated: ${dup.join(', ')}. `,`Արդեն կային, չկրկնեցի՝ ${dup.join(', ')}։ `):'')+'✓ '+T(`Добавлено: кредитов ${n}, доходов ${b.incomes.length}, расходов ${b.expenses.length}, счетов ${b.accounts.length}, событий прогноза ${b.events.length}, напоминаний ${b.reminders.length}.`,`Added: ${n} loans, ${b.incomes.length} incomes, ${b.expenses.length} expenses, ${b.accounts.length} accounts, ${b.events.length} forecast events, ${b.reminders.length} reminders.`,`Ավելացվեց՝ ${n} վարկ, ${b.incomes.length} եկամուտ, ${b.expenses.length} ծախս, ${b.accounts.length} հաշիվ, ${b.events.length} կանխատեսման իրադարձություն, ${b.reminders.length} հիշեցում։`);
   save();render();
 }
 

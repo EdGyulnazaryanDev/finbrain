@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "market:update": "node jobs/market.js"
+    "market:update": "node jobs/market.js",
+    "db:status": "node scripts/db.js status",
+    "db:import": "node scripts/db.js import"
   },
   "engines": {
     "node": ">=18.17"

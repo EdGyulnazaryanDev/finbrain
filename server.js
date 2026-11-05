@@ -165,7 +165,8 @@ app.post('/api/admin/refresh-market', admin, async (req, res) => {
 });
 
 // --- фронтенд ---
-app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
+// без долгого кеша: после git pull браузер сразу получает новую версию (проверка по ETag)
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0, etag: true, setHeaders: res => res.set('Cache-Control', 'no-cache') }));
 app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
 app.use((err, req, res, next) => { console.error(err); res.status(err.status || 500).json({ error: 'server_error' }); });
 

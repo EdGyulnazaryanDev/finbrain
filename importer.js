@@ -90,7 +90,7 @@ function parsePlan(rows) {
 async function parseWorkbook(buf) {
   const names = await readXlsx.readSheetNames(buf);
   const sheets = {};
-  for (const n of names) sheets[n] = await readXlsx(buf, { sheet: n });
+  for (const n of names) { try { sheets[n] = await readXlsx(buf, { sheet: n }); } catch (e) { sheets[n] = []; } }
   const notes = Object.values(sheets).flat().map(r => r.map(txt).join(' ')).filter(s => s.length > 40);
   let debts = [], settings = { expenses: [] }, plan = [];
   for (const [n, rows] of Object.entries(sheets)) {
@@ -103,3 +103,71 @@ async function parseWorkbook(buf) {
 }
 
 module.exports = { parseWorkbook };
+
+// ---- То же преобразование, что и в приложении (public/app.js → impBuild), для командной строки ----
+function emptyBudget() {
+  return {
+    currency: 'AMD',
+    profile: { married: false, partnerIncome: 0, kids: [], car: { has: false, fuel: 0, parking: 0, insurance: 0, service: 0, tax: 0 }, housing: { type: 'own', rent: 0, maint: 0 }, util: { electricity: 0, gas: 0, water: 0, internet: 0, phone: 0, building: 0 } },
+    incomes: [], expenses: [], loans: [], accounts: [], reminders: [],
+    set: { dep: 9, inv: 8, tax: 10, infl: 4 }, adv: { amount: 0, mode: 'once', horizon: 0 },
+  };
+}
+const BANKS_RE = /ameriabank|ardshinbank|acba|inecobank|evocabank|idbank|unibank|araratbank|amio bank|fast bank|vtb|converse bank|armeconombank/i;
+function buildImport(r, { mortgageBalance = 0, mortgageRate = 0, now = new Date() } = {}) {
+  const src = 'xlsx', b = { loans: [], incomes: [], expenses: [], accounts: [], events: [], reminders: [], depositTarget: false };
+  const short = c => (String(c).length > 9 ? '…' + String(c).slice(-4) : String(c));
+  const kind = t => (/ипотек|mortgage/i.test(t) ? 'mortgage' : /авто|car/i.test(t) ? 'car' : /карт|card|rocket|line/i.test(t) ? 'card' : /микро|payday|онлайн-?займ/i.test(t) ? 'short' : /знаком|друг|брат|сестр|родител|friend/i.test(t) ? 'other' : 'consumer');
+  const human = c => /[a-zа-яё]{3,}\s/i.test(String(c)) && !/\d{5,}/.test(String(c));
+  for (const d of r.debts) {
+    const n = Math.max(1, d.schedule.length), rocket = /rocket|line/i.test(d.type);
+    const tclean = d.type.replace(/\s*\d+[.,]?\d*\s*%/, '').replace(/,\s*$/, '').trim();
+    b.loans.push({ name: human(d.contract) ? d.contract : (tclean || 'Кредит') + ' · ' + short(d.contract), bank: rocket ? 'Rocket Line' : ((d.contract + ' ' + d.type).match(BANKS_RE) || [''])[0], type: kind(d.type + ' ' + d.contract), balance: Math.round(d.balance * 100) / 100, rate: d.rate, payment: Math.ceil(d.balance / n * (1 + d.rate / 1200)), day: d.due ? +d.due.slice(8, 10) : 1, contract: d.contract, schedule: d.schedule, src });
+  }
+  const s = r.settings || {};
+  if (s.salary) b.incomes.push({ name: 'Зарплата', amount: s.salary, src });
+  (s.expenses || []).forEach(e => b.expenses.push({ name: e.name, cat: e.cat, amount: e.amount, src }));
+  if (s.mortgage) {
+    if (mortgageBalance > 0) b.loans.push({ name: s.mortgage.name, bank: (s.mortgage.name.match(BANKS_RE) || [''])[0], type: 'mortgage', balance: mortgageBalance, rate: mortgageRate, payment: s.mortgage.payment, day: 1, src });
+    else b.expenses.push({ name: s.mortgage.name + ' · платёж', cat: 'other', amount: s.mortgage.payment, src });
+  }
+  if (s.cash) b.accounts.push({ bank: 'Наличные', type: 'cash', balance: s.cash, rate: 0, src });
+  if (s.depositRate) { b.accounts.push({ bank: 'Вклад на цель', type: 'deposit', balance: 0, rate: s.depositRate, src }); b.depositTarget = true; }
+  if (s.taxRefund) for (let k = 1; k <= 24; k++) { const d = new Date(now.getFullYear(), now.getMonth() + k - 1, 1); if (s.taxRefund.months.includes(d.getMonth() + 1)) b.events.push({ month: k, type: 'oneIncome', amount: s.taxRefund.amount, acc: -1, note: 'Возврат налога', src }); }
+  for (const p of r.plan || []) { const [y, m] = p.ym.split('-').map(Number); b.events.push({ month: Math.max(1, (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth()) + 1), type: 'oneExpense', amount: p.amount, acc: -1, note: p.note, src }); }
+  if (s.goalDate) b.reminders.push({ title: s.goalLabel || 'Цель', cat: 'home', amount: 0, freq: 'once', date: s.goalDate, day: 1, month: 1, daysBefore: 30, active: true, src });
+  return b;
+}
+function mergeImport(data, b, { overwrite = false } = {}) {
+  const d = data && data.profile ? data : emptyBudget();
+  const skipped = [];
+  const norm = x => String(x || '').trim().toLowerCase();
+  for (const k of ['loans', 'incomes', 'expenses', 'reminders']) {
+    d[k] = (d[k] || []).filter(x => x.src !== 'xlsx');
+    for (const item of b[k]) {
+      const key = k === 'loans' ? item.contract || item.name : item.name || item.title;
+      const same = d[k].findIndex(x => norm(k === 'loans' ? x.contract || x.name : x.name || x.title) === norm(key));
+      if (same >= 0 && !overwrite) { skipped.push({ k, name: key, have: d[k][same], file: item }); continue; }
+      if (same >= 0) d[k].splice(same, 1);
+      d[k].push(item);
+    }
+  }
+  d.accounts = d.accounts || [];
+  for (let i = b.accounts.length - 1; i >= 0; i--) {
+    const a = b.accounts[i];
+    const same = d.accounts.findIndex(x => x.src !== 'xlsx' && (a.type === 'cash' ? x.type === 'cash' : norm(x.bank) === norm(a.bank)));
+    if (same >= 0 && !overwrite) { skipped.push({ k: 'accounts', name: a.bank, have: d.accounts[same], file: a }); b.accounts.splice(i, 1); }
+  }
+  d.scen = d.scen || { events: [], infl: true, growth: 0, horizon: 24, target: -1 };
+  d.scen.events = (d.scen.events || []).filter(x => x.src !== 'xlsx').concat(b.events);
+  b.accounts.forEach((a, i) => {
+    const ex = d.accounts.findIndex(x => x.src === 'xlsx' && x.type === a.type && x.bank === a.bank);
+    let idx; if (ex >= 0) { Object.assign(d.accounts[ex], a); idx = ex; } else { d.accounts.push(a); idx = d.accounts.length - 1; }
+    if (b.depositTarget && a.type === 'deposit') d.scen.target = idx;
+  });
+  d._skipped = skipped;
+  return d;
+}
+module.exports.buildImport = buildImport;
+module.exports.mergeImport = mergeImport;
+module.exports.emptyBudget = emptyBudget;
