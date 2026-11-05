@@ -214,3 +214,12 @@ nav.side .more{display:none}
 .dupes{border:1px solid var(--warn,#f59e0b)}
 .dupe{padding:6px 0;border-bottom:1px dashed var(--line);font-size:14px}
 .dupe:last-child{border-bottom:0}
+.brain{border:1px solid var(--brand);background:linear-gradient(180deg,var(--soft),var(--card) 60%)}
+.sg{padding:12px 0;border-bottom:1px dashed var(--line)}
+.sg:last-child{border-bottom:0}
+.sgh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sgi{font-size:20px}
+.sgimp{margin-left:auto;font-weight:700;font-size:13px;padding:3px 10px;border-radius:999px;background:var(--card);border:1px solid var(--line)}
+.sgt{margin:6px 0 0 30px;font-size:14px;line-height:1.5}
+.sg .btns{margin-left:30px}
+@media(max-width:720px){.sgt,.sg .btns{margin-left:0}}

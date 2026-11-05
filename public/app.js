@@ -649,6 +649,91 @@ function homeMore(){
   ${HF().loans?homeInterest():''}`;
 }
 
+/* ================== BRAIN: proactive, number-backed suggestions ================== */
+let SG_ACT={};
+const EMP_O={pension:'mandatory',it:false,health:true};
+function bizNetFor(rev){const b=BIZ(),r0=b.revenue,c0=b.cur,o0=b.on;b.revenue=rev;b.cur=S.currency;b.on=true;const x=bizCalc();b.revenue=r0;b.cur=c0;b.on=o0;return x}
+function revForNet(net){let lo=net,hi=net*2+500000;for(let i=0;i<60;i++){const m=(lo+hi)/2;if(bizNetFor(m).net<net)lo=m;else hi=m}return Math.ceil(hi/100)*100}
+function bestDeposit(){return (MK?.deposits||[]).filter(x=>(x.cur||'AMD')==='AMD'&&num(x.rate)>0).sort((a,b)=>b.rate-a.rate)[0]||null}
+const isSalary=x=>/зарплат|salary|աշխատավարձ/i.test(x.name||'');
+const isRefund=x=>/возврат|refund|վերադարձ/i.test(x.name||'');
+function brain(){
+  const c=calc(),b=BIZ(),bz=bizCalc(),out=[],yr=v=>fmt(v)+T(' в год',' a year',' տարեկան'),tax=S.set.tax/100;
+  const sal=S.incomes.filter(x=>incFreq(x)==='monthly'&&activeNow(x)&&isSalary(x)&&num(x.amount)>0);
+  const mort=S.loans.find(l=>l.type==='mortgage'&&num(l.balance)>0);
+  const refundInc=S.incomes.find(x=>isRefund(x)&&num(x.amount)>0)||PLANS().find(p=>isRefund(p)&&num(p.amount)>0);
+  const liquid=S.accounts.filter(a=>['current','cash','savings'].includes(a.type)).reduce((s,a)=>s+num(a.balance),0);
+  const bd=bestDeposit();
+
+  // 1. ИП switched on, revenue empty, but a salary exists
+  if(b.on&&!(num(b.revenue)>0)&&sal.length){
+    const s=sal[0],net=num(s.amount),G=grossFromNet(net,EMP_O),need=revForNet(net),viaG=bizNetFor(G).net,asRev=bizNetFor(net).net;
+    out.push({sc:['taxes','home','money'],ic:'🏛',w:1,title:T('Перенести зарплату в ИП?','Move your salary into the business?','Տեղափոխե՞լ աշխատավարձը ԱՁ'),
+      text:T(`В доходах есть «${esc(s.name)}» ${fmt(net)} на руки. Три варианта: <br>• если ${fmt(net)} — это сумма счёта, который вы выставляете, на руки останется <b>${fmt(asRev)}</b>;<br>• чтобы на руки осталось те же ${fmt(net)}, выручка должна быть <b>${fmt(need)}</b>;<br>• если работодатель будет платить вам те же «грязные» ${fmt(G)}, но на ИП, на руки будет <b>${fmt(viaG)}</b> (${viaG>=net?'+':'−'}${fmt(Math.abs(viaG-net))} в месяц).`,
+        `Your income has “${esc(s.name)}” ${fmt(net)} take-home. Three options:<br>• if ${fmt(net)} is what you invoice, take-home is <b>${fmt(asRev)}</b>;<br>• to keep ${fmt(net)} take-home, revenue must be <b>${fmt(need)}</b>;<br>• if your employer pays the same gross ${fmt(G)} to your business, take-home is <b>${fmt(viaG)}</b> (${viaG>=net?'+':'−'}${fmt(Math.abs(viaG-net))} a month).`,
+        `Եկամուտներում կա «${esc(s.name)}» ${fmt(net)} ձեռքին։ Երեք տարբերակ՝<br>• եթե ${fmt(net)}-ը ձեր դուրս գրած հաշիվն է, ձեռքին կմնա <b>${fmt(asRev)}</b>;<br>• որ ձեռքին մնա նույն ${fmt(net)}-ը, հասույթը պետք է լինի <b>${fmt(need)}</b>;<br>• եթե գործատուն վճարի նույն ${fmt(G)} համախառնը ԱՁ-ին, ձեռքին կլինի <b>${fmt(viaG)}</b>։`),
+      impact:(viaG-net)*12,
+      acts:[{l:T(`Выручка ${fmt(net)}`,`Revenue ${fmt(net)}`,`Հասույթ ${fmt(net)}`),fn:()=>{b.revenue=net;b.cur=S.currency;s.to=ymd(addMonths(new Date(),-1));}},
+        {l:T(`Выручка ${fmt(need)} (те же на руки)`,`Revenue ${fmt(need)} (same take-home)`,`Հասույթ ${fmt(need)}`),fn:()=>{b.revenue=need;b.cur=S.currency;s.to=ymd(addMonths(new Date(),-1));}},
+        {l:T(`Выручка ${fmt(Math.round(G))} (те же грязные)`,`Revenue ${fmt(Math.round(G))} (same gross)`,`Հասույթ ${fmt(Math.round(G))}`),fn:()=>{b.revenue=Math.round(G);b.cur=S.currency;s.to=ymd(addMonths(new Date(),-1));}}],
+      note:T('Зарплата при этом закончится прошлым месяцем, чтобы не было дубля.','The salary entry will end last month so it isn’t counted twice.','Աշխատավարձը կավարտվի նախորդ ամսով, որ կրկնակի չհաշվվի։')});
+  }
+  // 2. ИП vs employment, same money
+  if(bz.on&&bz.rev>0&&b.regime!=='general'){
+    const emp=salaryFromGross(bz.rev,EMP_O).net,d=bz.net-emp;
+    out.push({sc:['taxes'],ic:'⚖️',title:T('ИП или трудовой договор','Business vs employment','ԱՁ թե աշխատանքային պայմանագիր'),
+      text:T(`С тех же ${fmt(bz.rev)} в месяц: через ИП на руки ${fmt(bz.net)}, как сотрудник было бы ${fmt(emp)} (подоходный 20%, пенсионный, гербовый). Разница ${d>=0?'в пользу ИП':'в пользу работы по найму'} — ${fmt(Math.abs(d))} в месяц.`,`From the same ${fmt(bz.rev)} a month: ${fmt(bz.net)} take-home via the business vs ${fmt(emp)} as an employee (20% income tax, pension, stamp duty). ${d>=0?'Business':'Employment'} wins by ${fmt(Math.abs(d))} a month.`,`Նույն ${fmt(bz.rev)}-ից՝ ԱՁ-ով ձեռքին ${fmt(bz.net)}, որպես աշխատող՝ ${fmt(emp)}։ Տարբերությունը՝ ${fmt(Math.abs(d))} ամսական։`),impact:d*12});
+  }
+  // 3. Microbusiness could zero the turnover tax
+  if(bz.on&&b.regime==='turnover'&&b.activity!=='hitech'&&bz.tt>0&&bz.yearAMD<=24e6)
+    out.push({sc:['taxes','home'],ic:'🪙',title:T('Микробизнес выгоднее','Microbusiness would be cheaper','Միկրոձեռնարկատիրությունն ավելի շահավետ է'),
+      text:T(`Оборот ≈${fmt(bz.rev*12)} в год — ниже порога 24 млн ֏. В режиме микробизнеса налога с оборота нет. Подходит не всем видам деятельности (консалтинг, бухгалтерия, юр. услуги, разработка ПО исключены); выбрать режим можно до 20 февраля.`,`Turnover ≈${fmt(bz.rev*12)} a year is below the AMD 24M limit. Microbusiness pays no turnover tax. Not all activities qualify (consulting, accounting, legal, software development are excluded); elect by 20 February.`,`Տարեկան ≈${fmt(bz.rev*12)} շրջանառությունը 24 մլն ֏ շեմից ցածր է։ Միկրոձեռնարկատիրությունում շրջանառության հարկ չկա։ Ռեժիմը ընտրվում է մինչև փետրվարի 20-ը։`),
+      impact:bz.tt*12,acts:[{l:T('Посчитать как микробизнес','Calculate as microbusiness','Հաշվել որպես միկրո'),fn:()=>{b.regime='micro'}}]});
+  // 4. Mortgage refund vs business
+  if(mort&&bz.on&&b.regime!=='general'&&refundInc)
+    out.push({sc:['taxes','home','money','plans'],ic:'⚠️',w:2,title:T('Возврат по ипотеке может пропасть','You may lose the mortgage refund','Հիփոթեքի վերադարձը կարող է կորչել'),
+      text:T('Возврат за проценты по ипотеке выплачивается из подоходного налога, удержанного с зарплаты. На налоге с оборота или микробизнесе подоходного нет — возвращать будет нечего. Если зарплата полностью уходит в ИП, уберите возврат из доходов или оставьте часть дохода по трудовому договору.','The mortgage interest refund comes from income tax withheld from salary. Turnover tax and microbusiness don’t pay income tax, so there is nothing to refund. If all salary moves into the business, remove the refund or keep part of your income as employment.','Հիփոթեքի տոկոսների վերադարձը կատարվում է աշխատավարձից պահված եկամտային հարկից։ Շրջանառության հարկի կամ միկրո ռեժիմում եկամտային հարկ չկա։'),impact:0});
+  if(mort&&!refundInc&&sal.length&&!bz.on){
+    const q=Math.min(750000,num(mort.balance)*num(mort.rate)/400),taxPaid=sal.reduce((a,x)=>{const g=grossFromNet(num(x.amount),EMP_O);return a+g*0.2},0)*3;
+    const r=Math.min(q,taxPaid);if(r>10000)out.push({sc:['loans','money','home'],ic:'↩️',title:T('Возврат налога за ипотеку','Mortgage tax refund','Հիփոթեքի հարկի վերադարձ'),
+      text:T(`Проценты по ипотеке ≈${fmt(num(mort.balance)*num(mort.rate)/400)} в квартал, подоходный с зарплаты ≈${fmt(taxPaid)} в квартал. Если квартира подходит под условия (до 55 млн ֏; для новых договоров в Ереване с 2025 года льготы нет), можно вернуть до ≈${fmt(r)} в квартал.`,`Mortgage interest ≈${fmt(num(mort.balance)*num(mort.rate)/400)} a quarter, income tax on salary ≈${fmt(taxPaid)} a quarter. If the home qualifies (up to AMD 55M; no relief for new Yerevan contracts from 2025), you may get back up to ≈${fmt(r)} a quarter.`,`Հիփոթեքի տոկոսները ≈${fmt(num(mort.balance)*num(mort.rate)/400)} եռամսյակում։ Եթե բնակարանը համապատասխանում է պայմաններին, կարող եք վերադարձնել մինչև ≈${fmt(r)} եռամսյակում։`),
+      impact:r*4,acts:[{l:T('Добавить квартальный доход','Add quarterly income','Ավելացնել եռամսյակային եկամուտ'),fn:()=>{S.incomes.push({name:T('Возврат налога (ипотека)','Tax refund (mortgage)','Հարկի վերադարձ (հիփոթեք)'),amount:Math.round(r),freq:'quarterly',month:1,day:20})}}]});
+  }
+  // 5. Expenses exceed income
+  if(c.fcf<0){const top=homeTopList().slice(0,3).map(x=>`${esc(x.n)} ${fmt(x.v)}`).join(', ');
+    out.push({sc:['home','money','advice'],ic:'🚨',w:3,title:T('Расходы больше доходов','Spending exceeds income','Ծախսերը գերազանցում են եկամուտները'),text:T(`Каждый месяц не хватает ${fmt(-c.fcf)}. Самые большие статьи: ${top}.`,`You are short ${fmt(-c.fcf)} every month. Biggest items: ${top}.`,`Ամեն ամիս պակասում է ${fmt(-c.fcf)}։ Ամենամեծ ծախսերը՝ ${top}։`),impact:c.fcf*12});}
+  // 6. Emergency cushion
+  if(c.essential>0&&c.cushion<3&&c.fcf>0){const need=3*c.essential-c.savings,m=Math.min(c.fcf*0.5,need/12),months=Math.ceil(need/Math.max(1,m));
+    out.push({sc:['home','accounts','plans','advice'],ic:'🛟',title:T('Подушка безопасности','Emergency fund','Անվտանգության բարձիկ'),text:T(`Накоплений хватит на ${(Math.round(c.cushion*10)/10)} мес. обязательных трат, разумный минимум — 3 месяца (${fmt(3*c.essential)}). Откладывая ${fmt(m)} в месяц, соберёте за ${months} мес.`,`Savings cover ${(Math.round(c.cushion*10)/10)} months of essentials; a sensible minimum is 3 months (${fmt(3*c.essential)}). Saving ${fmt(m)} a month gets you there in ${months} months.`,`Խնայողությունները բավարար են ${(Math.round(c.cushion*10)/10)} ամսվա պարտադիր ծախսերին, նվազագույնը՝ 3 ամիս (${fmt(3*c.essential)})։ Ամսական ${fmt(m)} խնայելով՝ կհավաքեք ${months} ամսում։`),impact:0,
+      acts:[{l:T('Создать план накопления','Create a saving plan','Ստեղծել խնայողության պլան'),fn:()=>{const acc=S.accounts.findIndex(a=>a.type==='savings'||a.type==='deposit');PLANS().push({name:T('Подушка безопасности','Emergency fund','Անվտանգության բարձիկ'),kind:'save',amount:Math.round(m/1000)*1000,freq:'monthly',from:todayStr(),to:ymd(addMonths(new Date(),months)),acc,goal:Math.round(need)});tab='plans'}}]});}
+  // 7. Expensive debt vs money lying in accounts
+  const free=Math.max(0,c.savings-3*c.essential);
+  S.loans.map((l,i)=>({l,i})).filter(x=>num(x.l.balance)>0&&num(x.l.rate)>0).sort((a,b)=>num(b.l.rate)-num(a.l.rate)).slice(0,1).forEach(({l,i})=>{
+    const accRate=Math.max(0,...S.accounts.filter(a=>num(a.balance)>0).map(a=>num(a.rate)))*(1-tax);
+    if(free>50000&&num(l.rate)>accRate+3){const x=Math.min(free,num(l.balance)),save=x*(num(l.rate)-accRate)/100;
+      out.push({sc:['loans','accounts','home','advice'],ic:'⚡',title:T(`Погасить «${esc(l.name||'')}» из накоплений`,`Pay off “${esc(l.name||'')}” from savings`,`Մարել «${esc(l.name||'')}» խնայողություններից`),
+        text:T(`Кредит под ${num(l.rate)}%, а деньги на счетах приносят ≈${(Math.round(accRate*10)/10)}% после налога. Сверх подушки свободно ${fmt(free)}; досрочно внести ${fmt(x)} выгоднее примерно на ${yr(save)}.`,`The loan costs ${num(l.rate)}% while your accounts earn ≈${(Math.round(accRate*10)/10)}% after tax. Beyond the cushion you have ${fmt(free)}; prepaying ${fmt(x)} saves about ${yr(save)}.`,`Վարկը ${num(l.rate)}% է, իսկ հաշիվները բերում են ≈${(Math.round(accRate*10)/10)}%։ Բարձիկից ավել ազատ է ${fmt(free)}, ${fmt(x)} վաղաժամկետ մարումը կխնայի մոտ ${yr(save)}։`),impact:save,
+        acts:[{l:T('Добавить в прогноз','Add to forecast','Ավելացնել կանխատեսմանը'),fn:()=>{FC().events.push({month:1,type:'prepay',loan:i,amount:Math.round(x),mode:'term'});tab='forecast'}}]})}});
+  // 8. Idle money on low-rate accounts
+  if(bd){const idle=S.accounts.filter(a=>['current','cash'].includes(a.type)&&num(a.rate)<num(bd.rate)-2).reduce((s,a)=>s+num(a.balance),0),cushionCash=Math.min(idle,c.essential);const x=idle-cushionCash;
+    if(x>200000){const gain=x*(num(bd.rate)/100)*(1-tax);out.push({sc:['accounts','home','advice'],ic:'🏦',title:T('Деньги лежат без дела','Idle money','Անգործ գումար'),text:T(`На текущих счетах и наличными ${fmt(idle)}. Оставив месяц расходов под рукой, ${fmt(x)} можно положить на вклад: лучший сейчас — ${esc(bd.bank)} ${bd.rate}% (${esc(bd.term||'')} дн.), это ≈${yr(gain)} после налога.`,`You have ${fmt(idle)} in current accounts and cash. Keeping a month of spending at hand, ${fmt(x)} could go into a deposit: the best now is ${esc(bd.bank)} ${bd.rate}% (${esc(bd.term||'')} days), ≈${yr(gain)} after tax.`,`Ընթացիկ հաշիվներում և կանխիկ՝ ${fmt(idle)}։ Մեկ ամսվա ծախսը թողնելով՝ ${fmt(x)} կարող եք դնել ավանդի. լավագույնը՝ ${esc(bd.bank)} ${bd.rate}%, ≈${yr(gain)}։`),impact:gain})}}
+  // 9. Wants share
+  if(c.income>0&&c.want/c.income>0.25){const cut=c.want*0.2;out.push({sc:['money','home','advice'],ic:'🎉',title:T('Траты на желания','Spending on wants','Ծախսեր ցանկությունների վրա'),text:T(`На желания уходит ${pct(c.want/c.income*100)} дохода. Срезав их на 20%, освободите ${fmt(cut)} в месяц.`,`Wants take ${pct(c.want/c.income*100)} of income. Cutting them by 20% frees ${fmt(cut)} a month.`,`Ցանկություններին գնում է եկամտի ${pct(c.want/c.income*100)}-ը։ 20%-ով կրճատելով՝ կազատեք ամսական ${fmt(cut)}։`),impact:cut*12})}
+  // 10. Short-term liquidity: payments due within 30 days vs money on hand
+  if(c.soonPay>0&&c.soonPay+c.spend-c.loansT>liquid+c.income){out.push({sc:['loans','home'],ic:'⏳',w:2,title:T('Не хватит денег на ближайшие платежи','Not enough for upcoming payments','Մոտակա վճարումների համար գումարը չի բավականացնի'),text:T(`В ближайшие 30 дней по графику нужно заплатить ${fmt(c.soonPay)}, а на счетах ${fmt(liquid)}. Подумайте, что перенести или чем закрыть разрыв.`,`Scheduled payments of ${fmt(c.soonPay)} are due within 30 days and accounts hold ${fmt(liquid)}. Plan how to cover the gap.`,`Առաջիկա 30 օրում պետք է վճարել ${fmt(c.soonPay)}, իսկ հաշիվներում ${fmt(liquid)} է։`),impact:0})}
+  // 11. Free cash with no plan
+  if(c.fcf>50000&&!PLANS().some(p=>p.kind==='save'&&activeNow(p))&&c.cushion>=3&&bd){const m=Math.round(c.fcf*0.5/1000)*1000,fv=fvMonthly(m,num(bd.rate),24,S.set.tax);
+    out.push({sc:['home','plans','advice'],ic:'📈',title:T('Свободные деньги можно заставить работать','Put free cash to work','Ազատ գումարը կարող է աշխատել'),text:T(`Каждый месяц остаётся ${fmt(c.fcf)}. Если откладывать половину (${fmt(m)}) под ${bd.rate}%, через 2 года будет ≈${fmt(fv)}, из них ≈${fmt(fv-m*24)} — проценты.`,`You have ${fmt(c.fcf)} left each month. Saving half (${fmt(m)}) at ${bd.rate}% gives ≈${fmt(fv)} in 2 years, ≈${fmt(fv-m*24)} of it interest.`,`Ամեն ամիս մնում է ${fmt(c.fcf)}։ Կեսը (${fmt(m)}) ${bd.rate}%-ով խնայելով՝ 2 տարում կլինի ≈${fmt(fv)}։`),impact:(fv-m*24)/2,
+      acts:[{l:T('Создать план на 24 мес','Create a 24-month plan','Ստեղծել 24 ամսվա պլան'),fn:()=>{PLANS().push({name:T('Накопления','Savings','Խնայողություններ'),kind:'save',amount:m,freq:'monthly',from:todayStr(),to:'',acc:S.accounts.findIndex(a=>a.type==='deposit'||a.type==='savings'),goal:0});planDur(PLANS().length-1,24);tab='plans'}}]})}
+  return out.sort((a,b)=>(b.w||0)-(a.w||0)||Math.abs(b.impact||0)-Math.abs(a.impact||0));
+}
+function homeTopList(){const c=calc(),items=[[T('Жильё','Housing','Բնակարան'),c.housing],[T('Коммунальные','Utilities','Կոմունալ'),c.util],[T('Дети','Kids','Երեխաներ'),c.kids],[T('Машина','Car','Մեքենա'),c.car],[T('Кредиты','Loans','Վարկեր'),c.loans],[T('Налоги ИП','Business taxes','ԱՁ հարկեր'),c.bizCost],...S.expenses.filter(activeNow).map(e=>[e.name||'',num(e.amount)])];return items.map(([n,v])=>({n,v})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v)}
+function brainCard(scope,limit){
+  SG_ACT={};let list=brain();if(scope&&scope!=='advice')list=list.filter(x=>x.sc.includes(scope));if(!list.length)return '';
+  const more=limit&&list.length>limit;if(limit)list=list.slice(0,limit);
+  return `<div class="card brain"><h2>🧠 ${T('Мозг советует','The brain suggests','Ուղեղը խորհուրդ է տալիս')}</h2>${list.map((x,i)=>`<div class="sg"><div class="sgh"><span class="sgi">${x.ic}</span><b>${x.title}</b>${x.impact?`<span class="sgimp ${x.impact>0?'good':'bad'}">${x.impact>0?'+':'−'}${fmt(Math.abs(x.impact))}${T('/год','/yr','/տարի')}</span>`:''}</div><div class="sgt">${x.text}</div>${x.acts?`<div class="btns" style="margin-top:8px">${x.acts.map((a,j)=>{SG_ACT[i+'_'+j]=a.fn;return `<button class="btn ghost" data-sg="${i}_${j}">${a.l}</button>`}).join('')}</div>`:''}${x.note?`<p class="sub" style="margin:4px 0 0">${x.note}</p>`:''}</div>`).join('')}${more?`<div class="btns"><button class="linkbtn" data-t="advice">${T('Все советы','All suggestions','Բոլոր խորհուրդները')} →</button></div>`:''}</div>`;
+}
+
 /* ---- possible duplicates across sections ---- */
 function findDupes(){
   const out=[],nm=x=>String(x||'').toLowerCase().replace(/[^a-zа-яё0-9Ա-և]+/g,' ').trim(),eq=(a,b)=>Math.abs(num(a)-num(b))<1&&num(a)>0;
@@ -2001,7 +2086,7 @@ function render(){
     if(AUTH==='out'){authMode=authMode||'login';openAuth();$('#authmodal').classList.add('gate')}
     return}
   const v={home:vHome,plans:vPlans,taxes:vTaxes,profile:()=>vProfile()+dataCard(),money:vMoney,accounts:vAccounts,loans:vLoans,market:vMarket,analytics:vAnalytics,ops:vOps,forecast:vForecast,advice:vAdvice,calc:vCalc,reminders:vRem}[tab]||vHome;
-  $('#view').innerHTML=pageHead(tab)+(GUIDE.some(g=>g[0]===tab)?whereCard(tab)+dupesCard(tab):tab==='home'?dupesCard():'')+v()+(tab==='loans'&&S.loans.length?rollNote():'');
+  $('#view').innerHTML=pageHead(tab)+(GUIDE.some(g=>g[0]===tab)?whereCard(tab)+dupesCard(tab):tab==='home'?dupesCard():'')+`<div id="brainout">${brainCard(tab,tab==='advice'?0:tab==='home'?4:3)}</div>`+v()+(tab==='loans'&&S.loans.length?rollNote():'');
   if(tab==='reminders')renderTg();
   live();
 }
@@ -2019,6 +2104,7 @@ function live(){
   if($('#fcout'))$('#fcout').innerHTML=fcOut();
   if($('#remout'))$('#remout').innerHTML=remOut();
   if($('#plansout'))$('#plansout').innerHTML=plansOut();
+  if($('#brainout'))$('#brainout').innerHTML=brainCard(tab,tab==='advice'?0:tab==='home'?4:3);
   if($('#taxout'))$('#taxout').innerHTML=taxOut();
   if($('#homeout'))$('#homeout').innerHTML=homeOut()+homeMore()+homePlans();
 }
@@ -2042,6 +2128,7 @@ document.addEventListener('click',e=>{
   if(b.dataset.seg){let v=b.dataset.v;v=v==='true'?true:v==='false'?false:v;if(b.dataset.seg==='homeRange'){S.homeFrom='';S.homeTo='';v=v==='all'?'all':+v}setPath(b.dataset.seg,v);save();render();return}
   if(b.dataset.q){const focus=quickAdd(b.dataset.q,+b.dataset.i);save();render();const el=document.querySelector(`[data-k="${focus}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.tg){tgAction(b.dataset.tg);return}
+  if(b.dataset.sg){const f=SG_ACT[b.dataset.sg];if(f){f();try{localStorage.setItem(KEY+'-tab',tab)}catch(_){}save();render();window.scrollTo({top:0,behavior:'smooth'})}return}
   if(b.dataset.guide!==undefined){S.hideGuide=b.dataset.guide==='0';save();render();return}
   if(b.dataset.hf){const F=HF();F[b.dataset.hf]=!F[b.dataset.hf];save();render();return}
   if(b.dataset.dur!==undefined){planDur(+b.dataset.dur,+b.dataset.n);save();render();return}
