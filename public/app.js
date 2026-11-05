@@ -51,7 +51,7 @@ function normalize(d){const e=emptyState();if(!d||!d.profile)return e;
 let S=emptyState();
 try{localStorage.removeItem(KEY)}catch(e){} // бюджет хранится только на сервере
 let USER=null,AIENABLED=false,syncTimer=null,AUTH='checking';
-function save(){if(USER){clearTimeout(syncTimer);syncTimer=setTimeout(pushBudget,800)}}
+function save(){recordHist();if(USER){clearTimeout(syncTimer);syncTimer=setTimeout(pushBudget,800)}}
 async function api(path,opts={}){
   const r=await fetch(path,{credentials:'same-origin',...opts,headers:{'Content-Type':'application/json',...(opts.headers||{})}});
   let j=null;try{j=await r.json()}catch(_){}
@@ -60,7 +60,7 @@ async function api(path,opts={}){
 }
 async function pushBudget(){try{await api('/api/budget',{method:'PUT',body:JSON.stringify({data:{...S,lang:LANG}})});setSync('ok')}catch(e){setSync(e.status===401?'out':'err')}}
 function setSync(st){const el=$('#syncst');if(el)el.textContent=st==='ok'?'☁️ ✓':st==='err'?'☁️ ⚠':''}
-let tab='profile'; try{tab=localStorage.getItem(KEY+'-tab')||'profile'}catch(e){}
+let tab='home'; try{tab=localStorage.getItem(KEY+'-tab')||'home'}catch(e){}
 
 /* ================== HELPERS ================== */
 const $=s=>document.querySelector(s);
@@ -188,8 +188,129 @@ const lab=v=>Array.isArray(v)?(Array.isArray(v[0])?L(v[0]):typeof v[0]==='string
 const sel=(path,label,opts)=>`<label class="f">${label}<select data-k="${path}" data-t="str">${Object.entries(opts).map(([k,v])=>`<option value="${k}" ${String(getPath(path))===String(k)?'selected':''}>${esc(lab(v))}</option>`).join('')}</select></label>`;
 const seg=(path,opts)=>`<div class="seg">${opts.map(([v,l])=>`<button data-seg="${path}" data-v="${v}" class="${String(getPath(path))===String(v)?'on':''}">${l}</button>`).join('')}</div>`;
 const tipH=(k,h,b)=>`<div class="tip ${k}"><b>${h}</b>${b}</div>`;
-const edu=(s,b)=>`<details class="edu"><summary>${s}</summary>${b}</details>`;
+const edu=()=>'';
 const stat=(l,v,cl='')=>`<div><div class="muted" style="font-size:12px">${l}</div><div class="big ${cl}">${v}</div></div>`;
+
+/* ================== NAVIGATION + PAGE HEADERS ================== */
+const PAGES={
+  home:['📊',['Обзор','Overview','Ամփոփում'],['Главное за выбранный период: капитал, долги, доходы и расходы, ближайшие платежи','Key numbers for the chosen period: net worth, debts, income and spending, upcoming payments','Գլխավորը ընտրված ժամանակահատվածում. կապիտալ, պարտքեր, եկամուտներ և ծախսեր, մոտակա վճարումներ']],
+  money:['💸',['Доходы и расходы','Income & spending','Եկամուտներ և ծախսեր'],['Регулярные доходы и ежемесячные траты','Regular income and monthly spending','Կանոնավոր եկամուտներ և ամսական ծախսեր']],
+  ops:['🧾',['Операции','Transactions','Գործարքներ'],['Разовые траты и поступления по датам','One-off spending and income by date','Միանվագ ծախսեր և մուտքեր ըստ ամսաթվերի']],
+  accounts:['💳',['Счета','Accounts','Հաշիվներ'],['Деньги на картах, вкладах и наличными','Money on cards, deposits and in cash','Գումարներ քարտերում, ավանդներում և կանխիկ']],
+  loans:['🏦',['Кредиты','Loans','Վարկեր'],['Кредиты и займы, даты платежей, импорт из Excel, новый кредит','Loans, payment dates, Excel import, planning a new loan','Վարկեր, վճարման ամսաթվեր, Excel ներմուծում, նոր վարկ']],
+  calc:['🧮',['Калькуляторы','Calculators','Հաշվիչներ'],['Зарплата, кредит, ипотека, досрочное погашение','Salary, loan, mortgage, prepayment','Աշխատավարձ, վարկ, հիփոթեք, վաղաժամկետ մարում']],
+  forecast:['🔮',['Прогноз','Forecast','Կանխատեսում'],['Что будет через 3–24 месяца при вашем плане','Where you’ll be in 3–24 months with your plan','Ինչ կլինի 3–24 ամսից ձեր պլանով']],
+  advice:['💡',['Лишние деньги','Extra money','Ազատ գումար'],['Куда выгоднее направить свободные деньги','Where spare money works best','Ուր է ավելի շահավետ ուղղել ազատ գումարը']],
+  reminders:['🔔',['Напоминания','Reminders','Հիշեցումներ'],['Ближайшие платежи и поступления','Upcoming payments and income','Մոտակա վճարումներ և մուտքեր']],
+  analytics:['🩺',['Аналитика','Analytics','Վերլուծություն'],['Финансовое здоровье и выводы','Financial health and insights','Ֆինանսական առողջություն և եզրակացություններ']],
+  market:['📈',['Рынок','Market','Շուկա'],['Ставки ЦБ, курсы валют, вклады и ипотека в банках','CBA rates, exchange rates, bank deposits and mortgages','ԿԲ տոկոսադրույքներ, փոխարժեքներ, ավանդներ և հիփոթեք բանկերում']],
+  profile:['👨‍👩‍👧',['Семья и жильё','Family & home','Ընտանիք և բնակարան'],['Состав семьи, дети, жильё, коммунальные, машина','Household, kids, home, utilities, car','Ընտանիքի կազմ, երեխաներ, բնակարան, կոմունալ, մեքենա']],
+};
+const NAV=[[null,['home']],[['Деньги','Money','Գումար'],['money','ops','accounts']],[['Долги','Debts','Պարտքեր'],['loans','calc']],[['План','Plan','Պլան'],['forecast','advice','reminders']],[['Анализ','Insights','Վերլուծություն'],['analytics','market']],[['Настройки','Settings','Կարգավորումներ'],['profile']]];
+const NAV_PRI=['home','ops','loans','forecast'];
+function renderNav(){
+  const nav=$('#tabs');nav.className='side';
+  nav.innerHTML=NAV.map(([g,items])=>`<div class="ng">${g?`<div class="ngt">${L(g)}</div>`:''}${items.map(k=>`<button data-t="${k}" class="${k===tab?'on':''} ${NAV_PRI.includes(k)?'pri':''}"><span class="ic">${PAGES[k][0]}</span><span>${L(PAGES[k][1])}</span></button>`).join('')}</div>`).join('')+`<button class="more" data-more="1"><span class="ic">☰</span><span>${T('Ещё','More','Ավելին')}</span></button>`;
+}
+const pageHead=k=>PAGES[k]?`<div class="ptitle"><h1>${PAGES[k][0]} ${L(PAGES[k][1])}</h1><p>${L(PAGES[k][2])}</p></div>`:'';
+
+/* ================== HISTORY (daily snapshots) ================== */
+function recordHist(){let ch=false;try{
+  const c=calc(),d=ymd(new Date());S.hist=S.hist||[];
+  const rec={d,inc:Math.round(c.income),sp:Math.round(c.spend),debt:Math.round(c.debt),sav:Math.round(c.savings),net:Math.round(c.net),sc:c.score};
+  const last=S.hist[S.hist.length-1];if(last&&last.d===d){ch=JSON.stringify(last)!==JSON.stringify(rec);S.hist[S.hist.length-1]=rec}else{S.hist.push(rec);ch=true}
+  if(S.hist.length>2000)S.hist.splice(0,S.hist.length-2000);
+}catch(e){}return ch}
+function homePeriod(){
+  const t=new Date();t.setHours(0,0,0,0);
+  const to=S.homeTo?new Date(S.homeTo+'T00:00:00'):t;
+  let from;if(S.homeFrom)from=new Date(S.homeFrom+'T00:00:00');
+  else if((S.homeRange||90)==='all'){const f=[...(S.hist||[]).map(h=>h.d),...(S.ops||[]).map(o=>o.date)].sort()[0];from=f?new Date(f+'T00:00:00'):new Date(t.getFullYear(),t.getMonth()-1,t.getDate())}
+  else{from=new Date(t);from.setDate(from.getDate()-num(S.homeRange||90))}
+  return{from,to,fromS:ymd(from),toS:ymd(to)};
+}
+const shortDate=d=>d.getDate()+' '+MONTHS()[d.getMonth()];
+const monthShort=d=>MONTHS()[d.getMonth()]+' '+String(d.getFullYear()).slice(2);
+
+function timeChart(series,from,to){
+  const W=760,H=260,P=58,R=12;const all=series.flatMap(s=>s.pts.map(p=>p.v));if(!all.length)return '';
+  let mx=Math.max(0,...all),mn=Math.min(0,...all);if(mx===mn)mx=mn+1;
+  const t0=+from,t1=Math.max(+to,t0+864e5);const x=t=>P+(W-P-R)*(t-t0)/(t1-t0),y=v=>H-26-(H-40)*(v-mn)/(mx-mn);
+  const grid=[mx,(mx+mn)/2,mn].map(v=>`<line x1="${P}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${P-6}" y="${y(v)+4}" font-size="11" text-anchor="end" fill="var(--muted)">${k1(v)}</text>`).join('')+(mn<0?`<line x1="${P}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--muted)" stroke-dasharray="2 3"/>`:'');
+  const span=(t1-t0)/864e5,ticks=[];
+  if(span<=62){const d=new Date(t0);d.setDate(d.getDate()+((7-d.getDay())%7));for(;+d<=t1;d.setDate(d.getDate()+(span<=21?3:7)))ticks.push(new Date(d))}
+  else{const d=new Date(new Date(t0).getFullYear(),new Date(t0).getMonth()+1,1),step=span>800?6:span>400?3:span>200?2:1;for(;+d<=t1;d.setMonth(d.getMonth()+step))ticks.push(new Date(d))}
+  const tk=ticks.map(d=>`<line x1="${x(+d)}" x2="${x(+d)}" y1="${H-26}" y2="${H-22}" stroke="var(--muted)"/><text x="${x(+d)}" y="${H-8}" font-size="11" text-anchor="middle" fill="var(--muted)">${span<=62?shortDate(d):monthShort(d)}</text>`).join('');
+  const today=new Date();today.setHours(0,0,0,0);
+  const tl=+today>t0&&+today<t1?`<line x1="${x(+today)}" x2="${x(+today)}" y1="12" y2="${H-26}" stroke="var(--brand)" stroke-dasharray="3 4"/><text x="${x(+today)+4}" y="20" font-size="11" fill="var(--brand)">${T('сегодня','today','այսօր')}</text>`:'';
+  const lines=series.map(s=>{const pts=s.pts.filter(p=>+p.t>=t0&&+p.t<=t1);if(!pts.length)return '';
+    const dots=pts.length<=40?pts.map(p=>`<circle cx="${x(+p.t).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${s.dash?2:3}" fill="${s.color}"><title>${shortDate(p.t)} ${p.t.getFullYear()}: ${fmt(p.v)}</title></circle>`).join(''):'';
+    return `<polyline fill="none" stroke="${s.color}" stroke-width="2.5" ${s.dash?'stroke-dasharray="6 5" opacity=".75"':''} points="${pts.map(p=>x(+p.t).toFixed(1)+','+y(p.v).toFixed(1)).join(' ')}"/>${dots}`}).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:300px">${grid}${tk}${tl}${lines}</svg><div class="legend" style="flex-direction:row;flex-wrap:wrap;gap:14px;margin-top:6px">${series.filter(s=>s.name).map(s=>`<div><i style="background:${s.color}"></i>${s.name}</div>`).join('')}</div>`;
+}
+function monthBars(rows){ // rows: [{label,inc,out,fc}]
+  if(!rows.length)return '';const W=560,H=240,P=58,mx=Math.max(1,...rows.flatMap(r=>[r.inc,r.out]));const bw=(W-P-10)/rows.length;const y=v=>(H-40)*v/mx;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:280px">${[0,.5,1].map(f=>`<line x1="${P}" x2="${W-6}" y1="${H-26-(H-40)*f}" y2="${H-26-(H-40)*f}" stroke="var(--line)"/><text x="${P-6}" y="${H-22-(H-40)*f}" font-size="11" text-anchor="end" fill="var(--muted)">${k1(mx*f)}</text>`).join('')}
+  ${rows.map((r,i)=>{const x0=P+i*bw+bw*.14,w=bw*.34,op=r.fc?'.4':'1';return `<rect x="${x0}" y="${H-26-y(r.inc)}" width="${w}" height="${y(r.inc)}" rx="3" fill="var(--c2)" opacity="${op}"><title>${r.label}: +${fmt(r.inc)}</title></rect><rect x="${x0+w+2}" y="${H-26-y(r.out)}" width="${w}" height="${y(r.out)}" rx="3" fill="var(--c4)" opacity="${op}"><title>${r.label}: −${fmt(r.out)}</title></rect><text x="${x0+w}" y="${H-8}" font-size="11" text-anchor="middle" fill="${r.cur?'var(--brand)':'var(--muted)'}" font-weight="${r.cur?700:400}">${r.label}</text>`}).join('')}</svg>
+  <div class="legend" style="flex-direction:row;flex-wrap:wrap;gap:14px;margin-top:6px"><div><i style="background:var(--c2)"></i>${T('Доходы','Income','Եկամուտներ')}</div><div><i style="background:var(--c4)"></i>${T('Расходы и платежи','Spending & payments','Ծախսեր և վճարներ')}</div><div><i style="background:var(--muted);opacity:.4"></i>${T('прогноз','forecast','կանխատեսում')}</div></div>`;
+}
+
+function vHome(){
+  if(S.homeRange==null)S.homeRange=90;
+  const p=homePeriod();
+  return `<div class="card homebar">${seg('homeRange',[[30,T('1 мес','1 mo','1 ամս')],[90,T('3 мес','3 mo','3 ամս')],[180,T('6 мес','6 mo','6 ամս')],[365,T('1 год','1 yr','1 տարի')],['all',T('Всё','All','Բոլորը')]])}
+    <label class="f">${T('с','from','սկսած')}<input type="date" data-k="homeFrom" data-t="str" value="${esc(S.homeFrom||p.fromS)}"></label>
+    <label class="f">${T('по','to','մինչև')}<input type="date" data-k="homeTo" data-t="str" value="${esc(S.homeTo||p.toS)}"></label></div>
+  <div id="homeout">${homeOut()}</div>`;
+}
+function homeOut(){
+  const c=calc(),p=homePeriod(),today=new Date();today.setHours(0,0,0,0);
+  if(recordHist())save();
+  const H=(S.hist||[]).filter(h=>h.d>=p.fromS&&h.d<=p.toS).map(h=>({...h,t:new Date(h.d+'T00:00:00')}));
+  const fc=fcSim(FC().events,12);const fpts=k=>[{t:today,v:fc.rows[0][k]},...fc.rows.slice(1).map(r=>{const d=fcMonth(r.m);return{t:new Date(d.getFullYear(),d.getMonth()+1,0),v:r[k]}})];
+  const showFc=+p.to>=+today;const chartTo=showFc?new Date(Math.max(+p.to,+new Date(today.getFullYear(),today.getMonth()+12,0))):p.to;
+  const hs=(k,name,color)=>({name,color,pts:H.map(h=>({t:h.t,v:h[k==='worth'?'net':k==='sav'?'sav':'debt']}))});
+  const series=[hs('worth',T('Капитал','Net worth','Կապիտալ'),'var(--c1)'),hs('sav',T('Накопления','Savings','Խնայողություններ'),'var(--c2)'),hs('debt',T('Долги','Debts','Պարտքեր'),'var(--c4)')];
+  if(showFc)series.push({name:T('прогноз (пунктир)','forecast (dashed)','կանխատեսում (կետագիծ)'),color:'var(--c1)',dash:true,pts:fpts('worth')},{color:'var(--c2)',dash:true,pts:fpts('sav')},{color:'var(--c4)',dash:true,pts:fpts('debt')});
+  const first=H[0],last=H[H.length-1];
+  const chg=(k,lbl,good)=>first&&last&&first!==last?(()=>{const v=last[k]-first[k];const ok=good?v>=0:v<=0;return `<div><div class="muted" style="font-size:12px">${lbl}</div><div class="big ${ok?'good':'bad'}">${v>=0?'+':'−'}${fmt(Math.abs(v))}</div></div>`})():'';
+  const ops=(S.ops||[]).filter(o=>o.date>=p.fromS&&o.date<=p.toS),oin=ops.filter(o=>o.type==='in').reduce((a,o)=>a+o.amount,0),oout=ops.filter(o=>o.type==='out').reduce((a,o)=>a+o.amount,0);
+  // month bars: months of the period (max 12) + 6 forecast months
+  const ms=[];{const a=new Date(p.from.getFullYear(),p.from.getMonth(),1),b=new Date(Math.min(+p.to,+today));b.setDate(1);for(const d=new Date(a);+d<=+b;d.setMonth(d.getMonth()+1))ms.push(new Date(d))}
+  const curKey=ymd(today).slice(0,7);
+  const rowsM=ms.slice(-12).map(d=>{const k=ymd(d).slice(0,7),hm=(S.hist||[]).filter(h=>h.d.slice(0,7)===k),base=hm.length?hm[hm.length-1]:{inc:c.income,sp:c.spend};const om=(S.ops||[]).filter(o=>o.date.slice(0,7)===k);
+    return{label:monthShort(d),inc:base.inc+om.filter(o=>o.type==='in').reduce((a,o)=>a+o.amount,0)+S.incomes.filter(x=>incFreq(x)!=='monthly').reduce((a,x)=>a+incomeInMonth(x,d),0),out:base.sp+om.filter(o=>o.type==='out').reduce((a,o)=>a+o.amount,0),cur:k===curKey}});
+  if(showFc)fc.rows.slice(2,8).forEach(r=>rowsM.push({label:monthShort(fcMonth(r.m)),inc:r.income+Math.max(0,r.one),out:r.expenses+r.payments+Math.max(0,-r.one),fc:true}));
+  // spending structure
+  const items=[{n:T('Жильё','Housing','Բնակարան'),v:c.housing,c:'var(--c1)'},{n:T('Коммунальные','Utilities','Կոմունալ'),v:c.util,c:'var(--c5)'},{n:T('Дети и учёба','Kids & education','Երեխաներ և ուսում'),v:c.kids,c:'var(--c6)'},{n:T('Машина','Car','Մեքենա'),v:c.car,c:'var(--c3)'},{n:T('Обязательные','Essentials','Պարտադիր'),v:c.need,c:'var(--c2)'},{n:T('Желания','Wants','Ցանկություններ'),v:c.want,c:'var(--c7)'},{n:T('Кредиты','Loans','Վարկեր'),v:c.loans,c:'var(--c4)'}];
+  const colors=['var(--c1)','var(--c2)','var(--c3)','var(--c4)','var(--c5)','var(--c6)','var(--c7)','var(--c8)'],byCat={};ops.filter(o=>o.type==='out').forEach(o=>byCat[o.cat]=(byCat[o.cat]||0)+o.amount);
+  const opItems=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,v],i)=>({n:(OP_OUT[k]||OP_OUT.other)[0]+' '+L((OP_OUT[k]||OP_OUT.other).slice(1,4)),v,c:colors[i%colors.length]}));
+  // debts
+  const loans=S.loans.map((l,i)=>({l,f:c.infos[i]})).filter(x=>num(x.l.balance)>0).sort((a,b)=>num(b.l.balance)-num(a.l.balance));
+  const maxB=Math.max(1,...loans.map(x=>num(x.l.balance)));
+  const small=loans.filter(x=>x.l.type!=='mortgage'),freeSmall=small.length?Math.max(...small.map(x=>x.f.n)):0;
+  const debtRows=loans.slice(0,8).map(x=>`<div class="drow"><div class="dname">${esc(x.l.name)}<span class="muted"> · ${x.f.temp?(x.f.due?fdate(x.f.due):'—'):(isFinite(x.f.n)?T('до','until','մինչև')+' '+monthLabel(x.f.n):'∞')}</span></div><div class="bar"><div style="width:${num(x.l.balance)/maxB*100}%;background:var(--c4)"></div></div><div class="n">${fmt(num(x.l.balance))}</div></div>`).join('');
+  const up=upcoming(14);
+  return `<div class="card"><h2>${T('Капитал, накопления и долги','Net worth, savings and debts','Կապիտալ, խնայողություններ և պարտքեր')}</h2>
+    <p class="sub">${fdate(p.fromS)} — ${fdate(p.toS)}${showFc?' · '+T('пунктиром — прогноз на 12 месяцев','dashed — 12-month forecast','կետագծով՝ 12 ամսվա կանխատեսում'):''}</p>
+    <div class="grid" style="margin-bottom:8px">${stat(T('Капитал сейчас','Net worth now','Կապիտալ հիմա'),fmt(c.net),c.net>=0?'good':'bad')}${stat(T('Накопления','Savings','Խնայողություններ'),fmt(c.savings))}${stat(T('Долги','Debts','Պարտքեր'),fmt(c.debt),'bad')}${chg('net',T('Капитал за период','Net worth change','Կապիտալի փոփոխություն'),true)}${chg('debt',T('Долги за период','Debt change','Պարտքերի փոփոխություն'),false)}</div>
+    ${timeChart(series,p.from,chartTo)}
+    ${H.length<2?`<p class="sub" style="margin-top:8px">🕒 ${T(`История записывается каждый день, когда вы открываете приложение. Первая запись — ${fdate((S.hist||[])[0]?.d||ymd(today))}.`,`History is recorded every day you open the app. First entry: ${fdate((S.hist||[])[0]?.d||ymd(today))}.`,`Պատմությունը գրանցվում է ամեն օր, երբ բացում եք հավելվածը։ Առաջին գրառումը՝ ${fdate((S.hist||[])[0]?.d||ymd(today))}։`)}</p>`:''}
+  </div>
+  <div class="g2">
+    <div class="card"><h2>${T('Доходы и расходы по месяцам','Income and spending by month','Եկամուտներ և ծախսեր ըստ ամիսների')}</h2>${monthBars(rowsM)}</div>
+    <div class="card"><h2>${T('Ближайшие 14 дней','Next 14 days','Առաջիկա 14 օրը')}</h2>${up.length?`<div class="scroll"><table>${up.slice(0,10).map(x=>{const ic=x.r.cat==='income';return `<tr><td style="white-space:nowrap;width:62px"><b>${shortDate(x.d)}</b></td><td>${esc(x.r.title||'')}<br><span class="muted" style="font-size:12px">${x.days<0?`<span class="bad">${T('просрочено','overdue','ժամկետանց')}</span>`:x.days===0?T('сегодня','today','այսօր'):T(`через ${x.days} дн.`,`in ${x.days} days`,`${x.days} օրից`)}</span></td><td class="n ${ic?'good':''}"><b>${ic?'+':''}${fmt(num(x.r.amount))}</b></td></tr>`}).join('')}</table></div>`:`<p class="muted">${T('Платежей нет.','No payments.','Վճարումներ չկան։')}</p>`}
+      <div class="grid" style="margin-top:10px">${stat(T('Разовые доходы за период','One-off income in period','Միանվագ մուտքեր'),'+'+fmt(oin),'good')}${stat(T('Разовые траты за период','One-off spending in period','Միանվագ ծախսեր'),'−'+fmt(oout),'bad')}</div>
+    </div>
+  </div>
+  <div class="g2">
+    <div class="card"><h2>${T('Ежемесячные траты','Monthly spending','Ամսական ծախսեր')}</h2>${donut(items)}</div>
+    <div class="card"><h2>${T('Разовые траты за период','One-off spending in the period','Միանվագ ծախսեր ժամանակահատվածում')}</h2>${opItems.length?donut(opItems):`<p class="muted">${T('За этот период разовых трат нет. Добавьте их кнопкой «➕ Операция».','No one-off spending in this period. Add it with “➕ Transaction”.','Այս ժամանակահատվածում միանվագ ծախսեր չկան։ Ավելացրեք «➕ Գործարք» կոճակով։')}</p>`}</div>
+  </div>
+  ${loans.length?`<div class="card"><h2>${T('Долги','Debts','Պարտքեր')}</h2>
+    <div class="grid" style="margin-bottom:10px">${stat(T('Всего долгов','Total debt','Ընդհանուր պարտք'),fmt(c.debt),'bad')}${stat(T('Платежи в месяц','Monthly payments','Ամսական վճարներ'),fmt(c.loans))}${small.length?stat(T('Без мелких долгов','Small debts cleared','Առանց մանր պարտքերի'),isFinite(freeSmall)?monthLabel(freeSmall):'—','good'):''}</div>
+    ${debtRows}${loans.length>8?`<p class="sub">${T(`и ещё ${loans.length-8} — во вкладке «Кредиты»`,`and ${loans.length-8} more in the Loans tab`,`և ևս ${loans.length-8}՝ «Վարկեր» բաժնում`)}</p>`:''}</div>`:''}`;
+}
 
 /* ================== CHROME ================== */
 function renderChrome(){
@@ -199,8 +320,7 @@ function renderChrome(){
   $('#h1').textContent='🧠 '+T('Финансовый мозг','Finance Brain','Ֆինանսական ուղեղ');
   $('#hsub').textContent=T('Бюджет семьи · кредиты · счета · куда направить лишние деньги','Family budget · loans · accounts · where to put extra money','Ընտանեկան բյուջե · վարկեր · հաշիվներ · ուր ուղղել ազատ գումարը');
   $('#foot').textContent=T('Это обучающий калькулятор, а не индивидуальная финансовая консультация. Проверяйте ставки и условия в своём банке.','This is an educational calculator, not personal financial advice. Check rates and terms with your bank.','Սա ուսուցողական հաշվիչ է, ոչ թե անհատական ֆինանսական խորհրդատվություն։ Տոկոսադրույքներն ու պայմանները ստուգեք ձեր բանկում։');
-  const tabs=[['profile','👨‍👩‍👧',T('Семья','Family','Ընտանիք')],['money','💸',T('Доходы/расходы','Income/costs','Եկամուտ/ծախս')],['ops','🧾',T('Операции','Transactions','Գործարքներ')],['accounts','💳',T('Счета','Accounts','Հաշիվներ')],['loans','🏦',T('Кредиты','Loans','Վարկեր')],['market','📈',T('Рынок','Market','Շուկա')],['analytics','📊',T('Аналитика','Analytics','Վերլուծություն')],['forecast','🔮',T('Прогноз','Forecast','Կանխատեսում')],['advice','💡',T('Лишние деньги','Extra money','Ազատ գումար')],['calc','🧮',T('Калькуляторы','Calculators','Հաշվիչներ')],['reminders','🔔',T('Напоминания','Reminders','Հիշեցումներ')]];
-  $('#tabs').innerHTML=tabs.map(([k,i,n])=>`<button data-t="${k}" class="${k===tab?'on':''}"><span class="ic">${i}</span>${n}</button>`).join('');
+  renderNav();
   $('#lang').value=LANG;$('#cur').value=S.currency;
   {const ob=$('#opbtn');if(ob)ob.textContent='➕ '+T('Операция','Transaction','Գործարք')}
   $('#aititle').textContent='🤖 '+T('AI-помощник','AI assistant','AI օգնական');$('#aiin').placeholder=T('Спросите про бюджет, кредиты, вклады…','Ask about your budget, loans, deposits…','Հարցրեք բյուջեի, վարկերի, ավանդների մասին…');aiRender();renderUser();
@@ -615,13 +735,7 @@ function advOut(){
   ${cmp}
   <div class="card"><h2>${T('Все варианты по приоритету','All options by priority','Բոլոր տարբերակներն ըստ առաջնահերթության')}</h2>
     ${opts.map((o,i)=>`<div class="opt ${i===0?'best':''}">${i===0?`<span class="rank">${T('Лучший шаг','Best move','Լավագույն քայլ')}</span>`:''}<h4>${o.icon} ${o.t}</h4><div style="font-size:14px">${o.body}</div>${edu(T('Почему так?','Why?','Ինչու՞'),o.why)}</div>`).join('')}
-  </div>${chart}
-  <div class="card"><h2>📘 ${T('Мини-словарь','Mini glossary','Մինի բառարան')}</h2>
-    ${edu(T('Сложный процент','Compound interest','Բարդ տոկոս'),T('Проценты начисляются и на вложенную сумму, и на уже полученные проценты. Чем дольше срок, тем сильнее эффект: на 20 лет при 8% деньги вырастают почти в 5 раз.','Interest is earned on both your money and the interest already earned. The longer the term, the stronger the effect: over 20 years at 8%, money grows almost 5×.','Տոկոսը հաշվվում է և՛ ներդրված գումարի, և՛ արդեն ստացված տոկոսների վրա։ Որքան երկար է ժամկետը, այնքան ուժեղ է ազդեցությունը. 20 տարում 8%-ով գումարն աճում է գրեթե 5 անգամ։'))}
-    ${edu(T('Реальная доходность','Real return','Իրական եկամտաբերություն'),T('Доходность минус инфляция. Депозит под 9% при инфляции 4% увеличивает покупательную способность примерно на 5% в год, а не на 9%.','Return minus inflation. A 9% deposit with 4% inflation grows your purchasing power by about 5% a year, not 9%.','Եկամտաբերությունը՝ հանած գնաճը։ 9% ավանդը 4% գնաճի դեպքում գնողունակությունը մեծացնում է տարեկան մոտ 5%-ով, ոչ թե 9%-ով։'))}
-    ${edu(T('Индексный фонд (ETF)','Index fund (ETF)','Ինդեքսային ֆոնդ (ETF)'),T('Корзина из сотен компаний сразу. Риск ниже, чем у отдельной акции, комиссии маленькие. Подходит новичкам, но только на длинный срок.','A basket of hundreds of companies at once. Less risky than a single stock, with low fees. Good for beginners, but only for the long term.','Միանգամից հարյուրավոր ընկերությունների զամբյուղ։ Ռիսկը ցածր է, քան առանձին բաժնետոմսինը, միջնորդավճարները՝ փոքր։ Հարմար է սկսնակների համար, բայց միայն երկար ժամկետով։'))}
-    ${edu(T('Рефинансирование','Refinancing','Վերաֆինանսավորում'),T('Новый кредит под меньшую ставку, которым гасятся старые. Выгодно, если разница в ставке больше 2–3% и нет больших комиссий.','A new, cheaper loan used to pay off old ones. Worth it if the rate gap is over 2–3% and the fees are small.','Ավելի ցածր տոկոսով նոր վարկ, որով մարվում են հինները։ Շահավետ է, եթե տոկոսադրույքների տարբերությունը 2–3%-ից ավելի է, և մեծ միջնորդավճարներ չկան։'))}
-  </div>`;
+  </div>${chart}`;
 }
 
 /* ================== MARKET (daily data from db) ================== */
@@ -1490,8 +1604,8 @@ function render(){
   if(out){$('#aibtn').classList.add('hide');
     if(AUTH==='out'){authMode=authMode||'login';openAuth();$('#authmodal').classList.add('gate')}
     return}
-  const v={profile:()=>vProfile()+dataCard(),money:vMoney,accounts:vAccounts,loans:vLoans,market:vMarket,analytics:vAnalytics,ops:vOps,forecast:vForecast,advice:vAdvice,calc:vCalc,reminders:vRem}[tab]||vProfile;
-  $('#view').innerHTML=v();
+  const v={home:vHome,profile:()=>vProfile()+dataCard(),money:vMoney,accounts:vAccounts,loans:vLoans,market:vMarket,analytics:vAnalytics,ops:vOps,forecast:vForecast,advice:vAdvice,calc:vCalc,reminders:vRem}[tab]||vHome;
+  $('#view').innerHTML=pageHead(tab)+v();
   if(tab==='reminders')renderTg();
   live();
 }
@@ -1508,6 +1622,7 @@ function live(){
   if($('#opconv'))$('#opconv').innerHTML=opConv();
   if($('#fcout'))$('#fcout').innerHTML=fcOut();
   if($('#remout'))$('#remout').innerHTML=remOut();
+  if($('#homeout'))$('#homeout').innerHTML=homeOut();
 }
 
 /* ================== EVENTS ================== */
@@ -1521,7 +1636,8 @@ $('#lang').addEventListener('change',e=>{LANG=e.target.value;try{localStorage.se
 document.addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   if(b.dataset.t){tab=b.dataset.t;try{localStorage.setItem(KEY+'-tab',tab)}catch(_){}render();window.scrollTo({top:0,behavior:'smooth'});return}
-  if(b.dataset.seg){let v=b.dataset.v;v=v==='true'?true:v==='false'?false:v;setPath(b.dataset.seg,v);save();render();return}
+  if(b.dataset.more){$('#tabs').classList.toggle('open');return}
+  if(b.dataset.seg){let v=b.dataset.v;v=v==='true'?true:v==='false'?false:v;if(b.dataset.seg==='homeRange'){S.homeFrom='';S.homeTo='';v=v==='all'?'all':+v}setPath(b.dataset.seg,v);save();render();return}
   if(b.dataset.q){const focus=quickAdd(b.dataset.q,+b.dataset.i);save();render();const el=document.querySelector(`[data-k="${focus}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.tg){tgAction(b.dataset.tg);return}
   if(b.dataset.ev!==undefined){const f=addEvent(+b.dataset.ev);save();render();const el=document.querySelector(`[data-k="${f}"]`);if(el){el.focus();el.select?.()}return}

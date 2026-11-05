@@ -143,3 +143,46 @@ html,body{overflow-x:hidden}
 @media(max-width:720px){.hbtn-op{order:-1}}
 .r-loan2{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))!important}
 .r-loan2 .x{justify-self:start;width:44px}
+/* ===== layout v2: wider, sidebar nav, page titles ===== */
+.wrap{max-width:1320px}
+header .wrap{max-width:1320px}
+.layout{display:grid;grid-template-columns:232px minmax(0,1fr);gap:22px;align-items:start;margin-top:18px}
+nav.side{position:sticky;top:14px;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:10px;display:block;margin:0}
+nav.side .ng+.ng{border-top:1px solid var(--line);margin-top:6px;padding-top:6px}
+nav.side .ngt{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;padding:8px 12px 4px}
+nav.side button{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;color:var(--ink);padding:9px 12px;border-radius:11px;font:600 14px Inter,'Noto Sans Armenian',sans-serif;cursor:pointer;text-align:left;box-shadow:none}
+nav.side button:hover{background:var(--soft)}
+nav.side button.on{background:var(--brand);color:#fff}
+nav.side button .ic{font-size:17px;width:22px;text-align:center;margin:0}
+nav.side .more{display:none}
+.ptitle{margin:2px 2px 14px}
+.ptitle h1{margin:0;font-size:24px;font-weight:800;letter-spacing:-.01em}
+.ptitle p{margin:4px 0 0;color:var(--muted);font-size:14px}
+.homebar{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.homebar .seg{margin:0}
+.homebar label.f{min-width:150px;flex:0 0 auto;margin:0}
+.drow{display:grid;grid-template-columns:minmax(140px,1.3fr) 2fr auto;gap:12px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)}
+.drow:last-child{border-bottom:0}
+.drow .dname{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drow .dname .muted{font-weight:400;font-size:12px}
+.drow .bar{height:10px;background:var(--soft);border-radius:6px;overflow:hidden}
+.drow .bar>div{height:100%;border-radius:6px}
+.drow .n{font-weight:700;font-variant-numeric:tabular-nums}
+@media(max-width:980px){.layout{grid-template-columns:200px minmax(0,1fr);gap:16px}}
+@media(max-width:720px){
+  .layout{display:block;margin-top:12px}
+  nav.side{position:fixed;top:auto;bottom:0;left:0;right:0;border-radius:18px 18px 0 0;padding:6px 6px calc(6px + env(safe-area-inset-bottom));display:flex;z-index:20;border-top:1px solid var(--line)}
+  nav.side .ng{display:contents}
+  nav.side .ngt{display:none}
+  nav.side .ng+.ng{border:0;margin:0;padding:0}
+  nav.side button{flex:1;flex-direction:column;gap:2px;padding:6px 2px;font-size:10.5px;text-align:center;justify-content:center;min-width:0}
+  nav.side button span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  nav.side button .ic{font-size:20px;width:auto}
+  nav.side button.on{background:var(--soft);color:var(--brand)}
+  nav.side button:not(.pri):not(.more){display:none}
+  nav.side .more{display:flex}
+  nav.side.open{flex-wrap:wrap;max-height:75vh;overflow:auto;box-shadow:0 -10px 40px rgba(0,0,0,.25)}
+  nav.side.open button,nav.side.open button:not(.pri):not(.more){display:flex;flex:0 0 25%;padding:10px 2px}
+  .ptitle h1{font-size:20px}
+  .drow{grid-template-columns:1fr auto}.drow .bar{grid-column:span 2;order:3}
+}
