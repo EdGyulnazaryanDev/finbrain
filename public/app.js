@@ -392,7 +392,7 @@ function vPlans(){
   const accOpts={'-1':[T('— не привязан —','— none —','— առանց հաշվի —')],...Object.fromEntries(S.accounts.map((a,i)=>[i,[(a.bank||lab(ATYPE[a.type]||''))+(num(a.rate)?` · ${num(a.rate)}%`:'')]]))};
   return `<div class="card"><h2>${T('Регулярные платежи и накопления','Recurring payments and savings','Պարբերական վճարներ և խնայողություններ')}</h2>
     <p class="sub">${T('Платёж или откладывание денег с выбранной частотой от одной даты до другой: рассрочка, абонемент, учёба, «копить на отпуск до июня». Можно указать дату в прошлом: тогда уже сделанные платежи посчитаются.','A payment or saving that repeats from one date to another: installments, memberships, tuition, “save for a holiday until June”. You can set a start date in the past and past payments are counted.','Վճար կամ խնայողություն, որը կրկնվում է մի ամսաթվից մինչև մյուսը. ապառիկ, աբոնեմենտ, ուսում, «խնայել արձակուրդի համար մինչև հունիս»։ Կարող եք նշել անցյալի ամսաթիվ, և արդեն կատարված վճարները կհաշվվեն։')}</p>
-    ${PLANS().map((p,i)=>`<div class="row r-loan2${activeNow(p)?'':' off'}">${inp(`plans.${i}.name`,T('Название','Name','Անվանում'),'str')}${sel(`plans.${i}.kind`,T('Что это','Type','Տեսակ'),PL_KIND)}${inp(`plans.${i}.amount`,T('Сумма за раз','Amount each time','Գումար ամեն անգամ'))}${sel(`plans.${i}.freq`,T('Как часто','How often','Որքան հաճախ'),PL_FREQ)}${dateF(`plans.${i}.from`,T('Первый платёж','First payment','Առաջին վճար'))}${dateF(`plans.${i}.to`,T('Последний (до даты)','Last (until)','Վերջին (մինչև)'))}${p.kind==='save'?sel(`plans.${i}.acc`,T('На какой счёт','Into account','Որ հաշվին'),accOpts)+inp(`plans.${i}.goal`,T('Цель (необяз.)','Goal (optional)','Նպատակ (ըստ ցանկ.)')):''}<button class="x" data-del="plans.${i}">✕</button>${durChips(i,p)}</div>`).join('')||`<p class="muted">${T('Пока ничего нет.','Nothing yet.','Դեռ ոչինչ չկա։')}</p>`}
+    ${PLANS().map((p,i)=>`<div class="row r-loan2${activeNow(p)?'':' off'}">${inp(`plans.${i}.name`,T('Название','Name','Անվանում'),'str')}${sel(`plans.${i}.kind`,T('Что это','Type','Տեսակ'),PL_KIND)}${inp(`plans.${i}.amount`,T('Сумма за раз','Amount each time','Գումար ամեն անգամ'))}${sel(`plans.${i}.freq`,T('Как часто','How often','Որքան հաճախ'),PL_FREQ)}${dateF(`plans.${i}.from`,T('Первый платёж','First payment','Առաջին վճար'))}${dateF(`plans.${i}.to`,T('Последний (до даты)','Last (until)','Վերջին (մինչև)'))}${p.kind==='save'?sel(`plans.${i}.acc`,T('На какой счёт','Into account','Որ հաշվին'),accOpts)+inp(`plans.${i}.goal`,T('Цель (необяз.)','Goal (optional)','Նպատակ (ըստ ցանկ.)')):''}<button class="x" data-del="plans.${i}">✕</button>${durChips(i,p)}${planWarn(p)?`<div style="grid-column:1/-1">${tipH('warn','⚠️',planWarn(p))}</div>`:''}</div>`).join('')||`<p class="muted">${T('Пока ничего нет.','Nothing yet.','Դեռ ոչինչ չկա։')}</p>`}
     <div class="btns"><button class="btn ghost" data-add="plansave">+ ${T('Накопление','Saving','Խնայողություն')}</button><button class="btn ghost" data-add="planpay">+ ${T('Регулярный платёж','Recurring payment','Պարբերական վճար')}</button></div>
   </div><div id="plansout"></div>`;
 }
@@ -647,6 +647,51 @@ function homeMore(){
   return `<div class="card"><h2>${T('Куда уходят деньги за месяц','Where the money goes each month','Ուր է գնում գումարը ամսական')}</h2><p class="sub">${T('Слева — откуда приходят деньги, справа — куда уходят. Наведите на полосу, чтобы увидеть сумму.','Left: where money comes from; right: where it goes. Hover a band to see the amount.','Ձախում՝ որտեղից է գալիս գումարը, աջում՝ ուր է գնում։')}</p>${homeFlow()}</div>
   <div class="card"><h2>${T('10 самых больших трат в месяц','Top 10 monthly costs','Ամենամեծ 10 ամսական ծախսերը')}</h2>${homeTop()}</div>
   ${HF().loans?homeInterest():''}`;
+}
+
+/* ---- possible duplicates across sections ---- */
+function findDupes(){
+  const out=[],nm=x=>String(x||'').toLowerCase().replace(/[^a-zа-яё0-9Ա-և]+/g,' ').trim(),eq=(a,b)=>Math.abs(num(a)-num(b))<1&&num(a)>0;
+  const items=[
+    ...S.incomes.map((x,i)=>({w:'money',kind:T('доход','income','եկամուտ'),n:x.name,a:num(x.amount),f:incFreq(x),key:'i'+i})),
+    ...S.expenses.map((x,i)=>({w:'money',kind:T('расход','expense','ծախս'),n:x.name,a:num(x.amount),f:'monthly',key:'e'+i})),
+    ...PLANS().map((p,i)=>({w:'plans',kind:p.kind==='save'?T('накопление','saving','խնայողություն'):T('регулярный платёж','recurring payment','պարբերական վճար'),n:p.name,a:num(p.amount),f:p.freq||'monthly',key:'p'+i,save:p.kind==='save'})),
+    ...S.loans.filter(l=>num(l.balance)>0&&!isTemp(l)).map((l,i)=>({w:'loans',kind:T('кредит','loan','վարկ'),n:l.name||l.bank,a:num(l.payment),f:'monthly',key:'l'+i,loan:true}))];
+  const lbl=x=>`«${esc(x.n||'—')}» (${x.kind}, ${fmt(x.a)})`;
+  for(let i=0;i<items.length;i++)for(let j=i+1;j<items.length;j++){const x=items[i],y=items[j];
+    const sameName=nm(x.n)&&nm(x.n)===nm(y.n),sameAmt=eq(x.a,y.a)&&x.f===y.f;
+    if((x.loan||y.loan)&&sameAmt&&!(x.loan&&y.loan&&!sameName))out.push({t:x.loan?y.w:x.w,m:T(`${lbl(x)} и ${lbl(y)} — одинаковая сумма. Платёж по кредиту уже учтён во вкладке «Кредиты», второй раз его вносить не нужно.`,`${lbl(x)} and ${lbl(y)} have the same amount. The loan payment is already counted in Loans; don’t add it again.`,`${lbl(x)} և ${lbl(y)}՝ նույն գումարը։ Վարկի վճարն արդեն հաշվված է «Վարկեր»-ում։`)});
+    else if(sameName&&(sameAmt||x.w!==y.w))out.push({t:y.w,m:T(`${lbl(x)} и ${lbl(y)} — одно и то же название в двух местах. Возможно, внесено дважды.`,`${lbl(x)} and ${lbl(y)} share a name in two places. It may be entered twice.`,`${lbl(x)} և ${lbl(y)}՝ նույն անվանումը երկու տեղում։ Հնարավոր է՝ լրացված է երկու անգամ։`)});
+    else if(sameAmt&&x.w===y.w&&x.kind===y.kind&&x.a>=10000)out.push({t:x.w,m:T(`${lbl(x)} и ${lbl(y)} — одинаковые суммы. Проверьте, не дубль ли это.`,`${lbl(x)} and ${lbl(y)} have identical amounts. Check it isn’t a duplicate.`,`${lbl(x)} և ${lbl(y)}՝ նույն գումարները։ Ստուգեք՝ կրկնօրինակ չէ՞։`)});
+  }
+  S.expenses.forEach(e=>{if(/кредит|ипотек|заём|займ|loan|mortgage|վարկ|հիփոթեք/i.test(String(e.name||''))&&S.loans.length)out.push({t:'money',m:T(`Расход «${esc(e.name)}» похож на платёж по кредиту. Если кредит есть во вкладке «Кредиты», уберите его из расходов.`,`Expense “${esc(e.name)}” looks like a loan payment. If the loan is in Loans, remove it from spending.`,`«${esc(e.name)}» ծախսը նման է վարկի վճարի։ Եթե վարկը կա «Վարկեր»-ում, հանեք ծախսերից։`)})});
+  const seen={};(S.ops||[]).forEach(o=>{const k=o.type+'|'+o.date+'|'+Math.round(o.amount)+'|'+o.cat;if(seen[k])out.push({t:'ops',m:T(`Две одинаковые операции ${fdate(o.date)} на ${fmt(o.amount)}. Если это одна и та же — удалите лишнюю.`,`Two identical transactions on ${fdate(o.date)} for ${fmt(o.amount)}. If it’s the same one, delete the extra.`,`Երկու նույն գործարք ${fdate(o.date)}՝ ${fmt(o.amount)}։ Եթե նույնն է, ջնջեք ավելորդը։`)});seen[k]=1});
+  const uniq=[...new Map(out.map(x=>[x.m,x])).values()];return uniq;
+}
+function dupesCard(only){
+  const d=findDupes().filter(x=>!only||x.t===only);if(!d.length)return '';
+  return `<div class="card dupes"><h2>⚠️ ${T('Возможные дубли','Possible duplicates','Հնարավոր կրկնօրինակներ')}</h2><p class="sub">${T('Одна и та же сумма, внесённая в двух местах, считается дважды и портит расчёт.','The same amount entered in two places is counted twice and skews the numbers.','Երկու տեղում լրացված նույն գումարը հաշվվում է երկու անգամ։')}</p>${d.slice(0,8).map(x=>`<div class="dupe">• ${x.m} <button class="linkbtn" data-t="${x.t}">${T('Открыть','Open','Բացել')} →</button></div>`).join('')}</div>`;
+}
+
+/* ---- "what goes where" guide ---- */
+const GUIDE=[
+  ['money','💸',['Зарплата и обычные траты каждый месяц (продукты, кафе, связь)','Salary and everyday monthly spending (groceries, cafes, phone)','Աշխատավարձ և ամենամսյա սովորական ծախսեր (մթերք, սրճարան, կապ)']],
+  ['loans','🏦',['Кредиты и ипотека: остаток, ставка, платёж в месяц. Ежемесячный платёж сюда и только сюда — он вычитается сам','Loans and mortgage: balance, rate, monthly payment. The monthly payment goes here only; it is deducted automatically','Վարկեր և հիփոթեք՝ մնացորդ, տոկոս, ամսական վճար։ Ամսական վճարը միայն այստեղ, այն հանվում է ինքնաշխատ']],
+  ['ops','🧾',['Разовое: ремонт, подарок, премия, досрочное погашение (аванс) кредита','One-off: repairs, a gift, a bonus, a loan prepayment','Միանվագ՝ վերանորոգում, նվեր, պարգևավճար, վարկի վաղաժամկետ մարում']],
+  ['plans','🎯',['Повторяется не каждый месяц или до даты: налог на машину раз в год, рассрочка, копилка на цель','Not monthly or until a date: yearly car tax, installments, saving toward a goal','Ոչ ամենամսյա կամ մինչև ամսաթիվ՝ մեքենայի տարեկան հարկ, ապառիկ, խնայողություն նպատակի համար']],
+  ['taxes','🏛',['Выручка ИП, налоги и бухгалтер','Business revenue, taxes and accountant','ԱՁ հասույթ, հարկեր և հաշվապահ']],
+  ['accounts','💳',['Сколько денег сейчас на картах, вкладах и наличными','How much money is on cards, deposits and in cash now','Որքան գումար կա հիմա քարտերում, ավանդներում և կանխիկ']]];
+function whereCard(cur){
+  if(S.hideGuide)return `<div class="guidemini"><button class="linkbtn" data-guide="1">🧭 ${T('Что куда вносить?','What goes where?','Ինչը որտեղ լրացնել')}</button></div>`;
+  return `<div class="card guide"><div class="guideh"><b>🧭 ${T('Что куда вносить','What goes where','Ինչը որտեղ լրացնել')}</b><button class="linkbtn" data-guide="0">${T('Скрыть','Hide','Թաքցնել')}</button></div>
+  <div class="guidegrid">${GUIDE.map(([k,i,txt])=>`<button class="gitem${k===cur?' on':''}" data-t="${k}"><span class="gi">${i}</span><span><b>${L(PAGES[k][1])}</b><br><span class="muted">${L(txt)}</span></span></button>`).join('')}</div>
+  <p class="sub" style="margin:8px 0 0">${T('Одно и то же не вносите в два места: например, платёж по кредиту — только в «Кредиты», а не ещё и в расходы или регулярные платежи, иначе он посчитается дважды.','Don’t enter the same thing twice: a loan payment goes only into Loans, not also into spending or recurring payments, or it will be counted twice.','Նույն բանը երկու տեղ մի լրացրեք. վարկի վճարը միայն «Վարկեր»-ում, ոչ թե նաև ծախսերում կամ պարբերական վճարներում, այլապես կհաշվվի երկու անգամ։')}</p></div>`;
+}
+function planWarn(p){ // a plan that looks like income or a loan payment
+  const n=String(p.name||'').toLowerCase();
+  if(p.kind==='save'&&/возврат|refund|վերադարձ|кешбэк|cashback/.test(n))return T('Похоже, это поступление денег (возврат налога), а не накопление. Его лучше внести в «Доходы и расходы» с частотой «раз в квартал» — тогда оно увеличит доход.','This looks like incoming money (a tax refund), not saving. Better add it in “Income & spending” as quarterly income so it increases your income.','Սա կարծես գումարի մուտք է (հարկի վերադարձ), ոչ թե խնայողություն։ Ավելի լավ է ավելացնել «Եկամուտներ և ծախսեր»-ում՝ «եռամսյակը մեկ» հաճախականությամբ։');
+  if(p.kind!=='save'&&S.loans.some(l=>num(l.balance)>0&&Math.abs(num(l.payment)-num(p.amount))<1&&(p.freq||'monthly')==='monthly'))return T('Сумма совпадает с платежом по кредиту. Если это он — удалите запись здесь: кредит уже учтён во вкладке «Кредиты».','The amount matches a loan payment. If it is that loan, remove it here: it is already counted in Loans.','Գումարը համընկնում է վարկի վճարի հետ։ Եթե դա է, ջնջեք այստեղից. այն արդեն հաշվված է «Վարկեր»-ում։');
+  return '';
 }
 
 /* ================== CHROME ================== */
@@ -1956,7 +2001,7 @@ function render(){
     if(AUTH==='out'){authMode=authMode||'login';openAuth();$('#authmodal').classList.add('gate')}
     return}
   const v={home:vHome,plans:vPlans,taxes:vTaxes,profile:()=>vProfile()+dataCard(),money:vMoney,accounts:vAccounts,loans:vLoans,market:vMarket,analytics:vAnalytics,ops:vOps,forecast:vForecast,advice:vAdvice,calc:vCalc,reminders:vRem}[tab]||vHome;
-  $('#view').innerHTML=pageHead(tab)+v()+(tab==='loans'&&S.loans.length?rollNote():'');
+  $('#view').innerHTML=pageHead(tab)+(GUIDE.some(g=>g[0]===tab)?whereCard(tab)+dupesCard(tab):tab==='home'?dupesCard():'')+v()+(tab==='loans'&&S.loans.length?rollNote():'');
   if(tab==='reminders')renderTg();
   live();
 }
@@ -1984,6 +2029,7 @@ document.addEventListener('input',e=>{
   setPath(k,e.target.dataset.t==='num'?num(e.target.value):e.target.value);autoFill(k,e.target.value);
   {const m=/^loans\.(\d+)\.(balance|schedule)/.exec(k);if(m&&S.loans[+m[1]])S.loans[+m[1]].asOf=ymd(new Date())}
   {const m=/^plans\.(\d+)\.from$/.exec(k),p=m&&PLANS()[+m[1]];if(p&&num(p.months)>0&&p.from)planDur(+m[1],num(p.months))}
+  {const m=/^plans\.(\d+)\.to$/.exec(k),p=m&&PLANS()[+m[1]];if(p)p.months=0}
   save();live();
 });
 document.addEventListener('change',e=>{if(e.target.dataset.durin!==undefined){planDur(+e.target.dataset.durin,Math.round(num(e.target.value)));save();render();return}if(e.target.id==='impfile'&&e.target.files[0]){impUpload(e.target.files[0]);return}if(e.target.dataset.imp){IMPopt[e.target.dataset.imp]=e.target.checked;$('#impout').innerHTML=impOut();return}if(e.target.dataset.prefill){prefillPre(e.target.value);save();render();return}if(e.target.tagName==='SELECT'&&e.target.dataset.k){save();if(/^(reminders\.\d+\.freq|calc\.|loans\.\d+\.mode|incomes\.\d+\.freq|plans\.\d+\.(kind|freq)|biz\.(regime|activity|cur)|opDraft\.cat|opDraft\.type|scen\.events\.\d+\.type|scen\.target)/.test(e.target.dataset.k))render();else live()}});
@@ -1996,6 +2042,7 @@ document.addEventListener('click',e=>{
   if(b.dataset.seg){let v=b.dataset.v;v=v==='true'?true:v==='false'?false:v;if(b.dataset.seg==='homeRange'){S.homeFrom='';S.homeTo='';v=v==='all'?'all':+v}setPath(b.dataset.seg,v);save();render();return}
   if(b.dataset.q){const focus=quickAdd(b.dataset.q,+b.dataset.i);save();render();const el=document.querySelector(`[data-k="${focus}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.tg){tgAction(b.dataset.tg);return}
+  if(b.dataset.guide!==undefined){S.hideGuide=b.dataset.guide==='0';save();render();return}
   if(b.dataset.hf){const F=HF();F[b.dataset.hf]=!F[b.dataset.hf];save();render();return}
   if(b.dataset.dur!==undefined){planDur(+b.dataset.dur,+b.dataset.n);save();render();return}
   if(b.dataset.sched!==undefined){SCHED_OPEN[b.dataset.sched]=!SCHED_OPEN[b.dataset.sched];if($('#plansout'))$('#plansout').innerHTML=plansOut();return}

@@ -201,3 +201,16 @@ nav.side .more{display:none}
 .hfchips .chip.on{background:var(--soft);color:var(--ink);border-color:var(--brand);opacity:1}
 .stackbar{display:flex;height:22px;border-radius:8px;overflow:hidden;background:var(--soft)}
 .stackbar>div{height:100%}
+.guide{padding:14px 16px}
+.guideh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.linkbtn{background:none;border:0;color:var(--brand);font:600 13px Inter,'Noto Sans Armenian',sans-serif;cursor:pointer;padding:4px}
+.guidemini{margin:-6px 0 10px}
+.guidegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px}
+.gitem{display:flex;gap:10px;align-items:flex-start;text-align:left;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:10px 12px;cursor:pointer;font:13px Inter,'Noto Sans Armenian',sans-serif;line-height:1.35}
+.gitem:hover{border-color:var(--brand)}
+.gitem.on{border-color:var(--brand);background:var(--soft);box-shadow:inset 3px 0 0 var(--brand)}
+.gitem .gi{font-size:20px;line-height:1}
+.gitem .muted{font-size:12px}
+.dupes{border:1px solid var(--warn,#f59e0b)}
+.dupe{padding:6px 0;border-bottom:1px dashed var(--line);font-size:14px}
+.dupe:last-child{border-bottom:0}
