@@ -28,6 +28,14 @@ CREATE TABLE IF NOT EXISTS budgets (
   data       TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS budget_versions (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  data       TEXT NOT NULL,
+  reason     TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS budget_versions_user ON budget_versions(user_id, id);
 CREATE TABLE IF NOT EXISTS market (
   id         INTEGER PRIMARY KEY CHECK (id = 1),
   data       TEXT NOT NULL,
@@ -53,6 +61,11 @@ const q = {
   getBudget: db.prepare('SELECT data, updated_at FROM budgets WHERE user_id = ?'),
   saveBudget: db.prepare(`INSERT INTO budgets (user_id, data, updated_at) VALUES (?, ?, datetime('now'))
                           ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`),
+  addVersion: db.prepare('INSERT INTO budget_versions (user_id, data, reason) VALUES (?, ?, ?)'),
+  lastVersion: db.prepare('SELECT id, created_at FROM budget_versions WHERE user_id = ? ORDER BY id DESC LIMIT 1'),
+  listVersions: db.prepare('SELECT id, data, reason, created_at FROM budget_versions WHERE user_id = ? ORDER BY id DESC LIMIT 60'),
+  getVersion: db.prepare('SELECT data FROM budget_versions WHERE user_id = ? AND id = ?'),
+  pruneVersions: db.prepare('DELETE FROM budget_versions WHERE user_id = ? AND id NOT IN (SELECT id FROM budget_versions WHERE user_id = ? ORDER BY id DESC LIMIT 200)'),
   getMarket: db.prepare('SELECT data, updated_at FROM market WHERE id = 1'),
   saveMarket: db.prepare(`INSERT INTO market (id, data, updated_at) VALUES (1, ?, datetime('now'))
                           ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`),

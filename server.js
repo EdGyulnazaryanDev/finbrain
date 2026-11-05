@@ -100,8 +100,28 @@ app.get('/api/budget', auth(), (req, res) => {
 app.put('/api/budget', auth(), (req, res) => {
   const data = req.body?.data;
   if (!data || typeof data !== 'object' || !data.profile) return res.status(400).json({ error: 'bad_data' });
-  q.saveBudget.run(req.user.id, JSON.stringify(data));
+  // история версий: прошлая версия сохраняется не чаще раза в 15 минут, а перед «опасными» действиями — всегда
+  const prev = q.getBudget.get(req.user.id), json = JSON.stringify(data);
+  if (prev && prev.data !== json) {
+    const last = q.lastVersion.get(req.user.id), force = req.get('x-snapshot');
+    const old = !last || Date.now() - Date.parse(last.created_at.replace(' ', 'T') + 'Z') > 15 * 60 * 1000;
+    if (force || old) { q.addVersion.run(req.user.id, prev.data, force ? String(force).slice(0, 20) : 'auto'); q.pruneVersions.run(req.user.id, req.user.id); }
+  }
+  q.saveBudget.run(req.user.id, json);
   res.json({ ok: true });
+});
+
+const vSummary = d => ({ loans: (d.loans || []).length, incomes: (d.incomes || []).length, expenses: (d.expenses || []).length, ops: (d.ops || []).length, accounts: (d.accounts || []).length, plans: (d.plans || []).length });
+app.get('/api/budget/versions', auth(), (req, res) => {
+  res.json({ versions: q.listVersions.all(req.user.id).map(v => { let d = {}; try { d = JSON.parse(v.data); } catch (_) {} return { id: v.id, at: v.created_at, reason: v.reason, ...vSummary(d) }; }) });
+});
+app.post('/api/budget/versions/:id/restore', auth(), (req, res) => {
+  const v = q.getVersion.get(req.user.id, +req.params.id);
+  if (!v) return res.status(404).json({ error: 'not_found' });
+  const cur = q.getBudget.get(req.user.id);
+  if (cur) q.addVersion.run(req.user.id, cur.data, 'before-restore');
+  q.saveBudget.run(req.user.id, v.data);
+  res.json({ ok: true, data: JSON.parse(v.data) });
 });
 
 // --- рынок (только после входа) ---

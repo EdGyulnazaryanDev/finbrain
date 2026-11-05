@@ -58,7 +58,7 @@ async function api(path,opts={}){
   if(!r.ok){const e=new Error(j?.error||('HTTP '+r.status));e.status=r.status;e.code=j?.error;throw e}
   return j;
 }
-async function pushBudget(){try{await api('/api/budget',{method:'PUT',body:JSON.stringify({data:{...S,lang:LANG}})});setSync('ok')}catch(e){setSync(e.status===401?'out':'err')}}
+let SNAP='';async function pushBudget(){try{const h=SNAP?{'x-snapshot':SNAP}:undefined;SNAP='';await api('/api/budget',{method:'PUT',headers:h,body:JSON.stringify({data:{...S,lang:LANG}})});setSync('ok')}catch(e){setSync(e.status===401?'out':'err')}}
 function setSync(st){const el=$('#syncst');if(el)el.textContent=st==='ok'?'☁️ ✓':st==='err'?'☁️ ⚠':''}
 let tab='home'; try{tab=localStorage.getItem(KEY+'-tab')||'home'}catch(e){}
 
@@ -1424,8 +1424,13 @@ function logout(){
 
 /* ================== DATA CARD ================== */
 function dataCard(){return `<div class="card"><h2>${T('Данные','Data','Տվյալներ')}</h2><p class="sub">${T('Сохраните копию данных или перенесите на другое устройство.','Back up your data or move it to another device.','Պահպանեք տվյալների պատճենը կամ տեղափոխեք այլ սարք։')}</p>
-  <div class="btns"><button class="btn ghost" data-act="copy">📋 ${T('Скопировать данные','Copy data','Պատճենել տվյալները')}</button><button class="btn ghost" data-act="import">📥 ${T('Вставить данные','Paste data','Տեղադրել տվյալները')}</button><button class="btn ghost" data-act="demo">✨ ${T('Пример','Example','Օրինակ')}</button><button class="btn ghost" data-act="clear">🗑 ${T('Очистить всё','Clear all','Մաքրել ամբողջը')}</button></div>
-  <div id="io" class="hide" style="margin-top:10px"><textarea id="iot" placeholder="${T('Вставьте сюда скопированные данные','Paste your copied data here','Տեղադրեք պատճենված տվյալներն այստեղ')}"></textarea><div class="btns"><button class="btn" data-act="doimport">${T('Загрузить','Load','Բեռնել')}</button></div></div><p id="msg" class="sub"></p></div>`}
+  <div class="btns"><button class="btn ghost" data-act="copy">📋 ${T('Скопировать данные','Copy data','Պատճենել տվյալները')}</button><button class="btn ghost" data-act="import">📥 ${T('Вставить данные','Paste data','Տեղադրել տվյալները')}</button><button class="btn ghost" data-act="demo">✨ ${T('Заменить моими данными пример','Replace with an example','Փոխարինել օրինակով')}</button><button class="btn ghost" data-act="clear">🗑 ${T('Очистить всё','Clear all','Մաքրել ամբողջը')}</button></div>
+  <div id="io" class="hide" style="margin-top:10px"><textarea id="iot" placeholder="${T('Вставьте сюда скопированные данные','Paste your copied data here','Տեղադրեք պատճենված տվյալներն այստեղ')}"></textarea><div class="btns"><button class="btn" data-act="doimport">${T('Загрузить','Load','Բեռնել')}</button></div></div><p id="msg" class="sub"></p>${UNDO?`<div class="btns"><button class="btn" data-act="undo">↩ ${T('Вернуть мои данные','Bring my data back','Վերադարձնել իմ տվյալները')}</button></div>`:''}
+  <h3 style="margin:16px 0 6px">🕘 ${T('История версий','Version history','Տարբերակների պատմություն')}</h3><p class="sub" style="margin:0 0 6px">${T('Сервер хранит прошлые версии ваших данных (каждые 15 минут и перед заменой примером, очисткой или загрузкой). Можно вернуть любую.','The server keeps past versions of your data (every 15 minutes and before example, clear or paste). You can restore any of them.','Սերվերը պահում է ձեր տվյալների նախորդ տարբերակները։ Կարող եք վերադարձնել ցանկացածը։')}</p><div id="versions"><button class="btn ghost" data-act="versions">${T('Показать версии','Show versions','Ցույց տալ տարբերակները')}</button></div></div>`}
+let UNDO=null;const dmsg=t=>{const m=$('#msg');if(m)m.textContent=t};
+function dangerReplace(make,reason){UNDO=JSON.parse(JSON.stringify(S));SNAP=reason;S=make();save();render();dmsg(T('Готово. Ваши прежние данные сохранены — кнопка «↩ Вернуть мои данные» ниже.','Done. Your previous data is saved: use “↩ Bring my data back” below.','Պատրաստ է։ Նախորդ տվյալները պահպանված են։'))}
+async function showVersions(){const box=$('#versions');if(!box)return;let r;try{r=await api('/api/budget/versions')}catch(_){box.innerHTML=`<p class="muted">${T('Не удалось загрузить','Could not load','Չհաջողվեց բեռնել')}</p>`;return}
+  box.innerHTML=r.versions.length?`<div class="scroll" style="max-height:320px;overflow:auto"><table>${r.versions.map(v=>`<tr><td style="white-space:nowrap">${esc(fdate(v.at.slice(0,10)))} ${esc(v.at.slice(11,16))}<br><span class="muted" style="font-size:12px">${v.reason==='auto'?T('авто','auto','ավտո'):esc(v.reason||'')}</span></td><td class="muted" style="font-size:13px">${T('кредитов','loans','վարկ')} ${v.loans} · ${T('доходов','income','եկամուտ')} ${v.incomes} · ${T('расходов','expenses','ծախս')} ${v.expenses} · ${T('операций','transactions','գործարք')} ${v.ops} · ${T('счетов','accounts','հաշիվ')} ${v.accounts}</td><td><button class="btn ghost" data-ver="${v.id}">↩ ${T('Вернуть','Restore','Վերադարձնել')}</button></td></tr>`).join('')}</table></div>`:`<p class="muted">${T('Версий пока нет — они появятся по мере работы.','No versions yet; they appear as you work.','Տարբերակներ դեռ չկան։')}</p>`}
 
 /* ---- быстрый выбор названий ---- */
 const Q_INCOME=[['↩️','Возврат налога (ипотека)','Mortgage tax refund','Հիփոթեքի հարկի վերադարձ',{freq:'quarterly',month:1,day:20}],['💼','Зарплата','Salary','Աշխատավարձ'],['🧑‍💻','Фриланс','Freelance','Ֆրիլանս'],['🛠','Подработка','Side job','Լրացուցիչ աշխատանք'],['🎁','Премия','Bonus','Պարգևավճար'],['🏠','Сдача квартиры','Rental income','Բնակարանի վարձակալություն'],['👴','Пенсия','Pension','Կենսաթոշակ'],['👶','Пособие','Benefit','Նպաստ'],['📈','Дивиденды','Dividends','Շահաբաժիններ'],['🌍','Перевод из-за границы','Remittance','Դրամական փոխանցում']];
@@ -2181,6 +2186,7 @@ document.addEventListener('click',e=>{
   if(b.dataset.seg){let v=b.dataset.v;v=v==='true'?true:v==='false'?false:v;if(b.dataset.seg==='homeRange'){S.homeFrom='';S.homeTo='';v=v==='all'?'all':+v}setPath(b.dataset.seg,v);save();render();return}
   if(b.dataset.q){const focus=quickAdd(b.dataset.q,+b.dataset.i);save();render();const el=document.querySelector(`[data-k="${focus}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.tg){tgAction(b.dataset.tg);return}
+  if(b.dataset.ver){api('/api/budget/versions/'+b.dataset.ver+'/restore',{method:'POST'}).then(r=>{S=normalize(r.data);render();dmsg(T('Версия восстановлена ✓','Version restored ✓','Տարբերակը վերականգնված է ✓'))}).catch(()=>dmsg(T('Не получилось','Failed','Չստացվեց')));return}
   if(b.dataset.sgh){if(b.dataset.sgh==='*')S.brainHide={};else{S.brainHide=S.brainHide||{};S.brainHide[b.dataset.sgh]=1}save();if($('#brainout'))$('#brainout').innerHTML=brainCard(tab,tab==='advice'?0:tab==='home'?4:3);return}
   if(b.dataset.sg){const f=SG_ACT[b.dataset.sg];if(f){f();try{localStorage.setItem(KEY+'-tab',tab)}catch(_){}save();render();window.scrollTo({top:0,behavior:'smooth'})}return}
   if(b.dataset.guide!==undefined){S.hideGuide=b.dataset.guide==='0';save();render();return}
@@ -2221,9 +2227,11 @@ document.addEventListener('click',e=>{
   const act=b.dataset.act;if(!act)return;const msg=t=>{const m=$('#msg');if(m)m.textContent=t};
   if(act==='copy'){const fb=()=>{$('#io').classList.remove('hide');$('#iot').value=JSON.stringify(S);msg(T('Скопируйте текст из поля вручную','Copy the text from the box manually','Պատճենեք տեքստը դաշտից ձեռքով'))};try{navigator.clipboard.writeText(JSON.stringify(S)).then(()=>msg(T('Скопировано ✓','Copied ✓','Պատճենված է ✓')),fb)}catch(_){fb()}}
   if(act==='import'){$('#io').classList.toggle('hide')}
-  if(act==='doimport'){try{const d=JSON.parse($('#iot').value);if(!d.profile)throw 0;S=normalize(d);save();render();msg(T('Загружено ✓','Loaded ✓','Բեռնված է ✓'))}catch(_){msg(T('Не получилось прочитать данные','Couldn’t read the data','Չհաջողվեց կարդալ տվյալները'))}}
-  if(act==='demo'){S=demo();save();render()}
-  if(act==='clear'){if(b.dataset.sure){S=emptyState();save();render()}else{b.dataset.sure=1;b.textContent=T('Точно очистить? Нажмите ещё раз','Really clear? Tap again','Իսկապե՞ս մաքրել։ Սեղմեք ևս մեկ անգամ')}}
+  if(act==='doimport'){try{const d=JSON.parse($('#iot').value);if(!d.profile)throw 0;dangerReplace(()=>normalize(d),'before-paste');msg(T('Загружено ✓','Loaded ✓','Բեռնված է ✓'))}catch(_){msg(T('Не получилось прочитать данные','Couldn’t read the data','Չհաջողվեց կարդալ տվյալները'))}}
+  if(act==='demo'){if(b.dataset.sure)dangerReplace(demo,'before-demo');else{b.dataset.sure=1;b.textContent=T('Ваши данные заменятся примером. Нажмите ещё раз','Your data will be replaced by the example. Tap again','Ձեր տվյալները կփոխարինվեն օրինակով։ Սեղմեք կրկին')}return}
+  if(act==='undo'){if(UNDO){SNAP='before-undo';S=normalize(UNDO);UNDO=null;save();render();msg(T('Ваши данные возвращены ✓','Your data is back ✓','Ձեր տվյալները վերադարձված են ✓'))}return}
+  if(act==='versions'){showVersions();return}
+  if(act==='clear'){if(b.dataset.sure){dangerReplace(emptyState,'before-clear')}else{b.dataset.sure=1;b.textContent=T('Точно очистить? Нажмите ещё раз','Really clear? Tap again','Իսկապե՞ս մաքրել։ Սեղմեք ևս մեկ անգամ')}}
 });
 $('#aiform').addEventListener('submit',e=>{e.preventDefault();const v=$('#aiin').value;$('#aiin').value='';aiSend(v)});
 $('#aiin').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('#aiform').requestSubmit()}});
