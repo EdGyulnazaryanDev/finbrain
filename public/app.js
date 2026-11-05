@@ -753,10 +753,13 @@ function findDupes(){
   }
   S.expenses.forEach(e=>{if(/кредит|ипотек|заём|займ|loan|mortgage|վարկ|հիփոթեք/i.test(String(e.name||''))&&S.loans.length)out.push({t:'money',m:T(`Расход «${esc(e.name)}» похож на платёж по кредиту. Если кредит есть во вкладке «Кредиты», уберите его из расходов.`,`Expense “${esc(e.name)}” looks like a loan payment. If the loan is in Loans, remove it from spending.`,`«${esc(e.name)}» ծախսը նման է վարկի վճարի։ Եթե վարկը կա «Վարկեր»-ում, հանեք ծախսերից։`)})});
   const seen={};(S.ops||[]).forEach(o=>{const k=o.type+'|'+o.date+'|'+Math.round(o.amount)+'|'+o.cat;if(seen[k])out.push({t:'ops',m:T(`Две одинаковые операции ${fdate(o.date)} на ${fmt(o.amount)}. Если это одна и та же — удалите лишнюю.`,`Two identical transactions on ${fdate(o.date)} for ${fmt(o.amount)}. If it’s the same one, delete the extra.`,`Երկու նույն գործարք ${fdate(o.date)}՝ ${fmt(o.amount)}։ Եթե նույնն է, ջնջեք ավելորդը։`)});seen[k]=1});
+  (FC().events||[]).forEach(ev=>{if(ev.type!=='oneExpense'&&ev.type!=='oneIncome')return;const ym=ymd(fcMonth(Math.round(num(ev.month)))).slice(0,7),tp=ev.type==='oneExpense'?'out':'in';
+    const o=(S.ops||[]).find(o=>o.type===tp&&(o.date||'').slice(0,7)===ym&&Math.abs(o.amount-Math.abs(num(ev.amount)))<1);
+    if(o)out.push({t:'forecast',also:['ops'],m:T(`${fmt(o.amount)} (${esc(ev.note||o.note||'')}) есть и в «Операциях» (${fdate(o.date)}), и в событиях прогноза на ${fcLabel(Math.round(num(ev.month)))}. Если это уже оплачено — удалите событие из прогноза, иначе сумма вычтется дважды.`,`${fmt(o.amount)} (${esc(ev.note||o.note||'')}) is both in Transactions (${fdate(o.date)}) and in forecast events for ${fcLabel(Math.round(num(ev.month)))}. If it’s already paid, remove the forecast event or it will be subtracted twice.`,`${fmt(o.amount)} (${esc(ev.note||o.note||'')}) կա և «Գործարքներ»-ում (${fdate(o.date)}), և կանխատեսման իրադարձություններում։ Եթե արդեն վճարված է, ջնջեք իրադարձությունը կանխատեսումից։`)})});
   const uniq=[...new Map(out.map(x=>[x.m,x])).values()];return uniq;
 }
 function dupesCard(only){
-  const d=findDupes().filter(x=>!only||x.t===only);if(!d.length)return '';
+  const d=findDupes().filter(x=>!only||x.t===only||(x.also||[]).includes(only));if(!d.length)return '';
   return `<div class="card dupes"><h2>⚠️ ${T('Возможные дубли','Possible duplicates','Հնարավոր կրկնօրինակներ')}</h2><p class="sub">${T('Одна и та же сумма, внесённая в двух местах, считается дважды и портит расчёт.','The same amount entered in two places is counted twice and skews the numbers.','Երկու տեղում լրացված նույն գումարը հաշվվում է երկու անգամ։')}</p>${d.slice(0,8).map(x=>`<div class="dupe">• ${x.m} <button class="linkbtn" data-t="${x.t}">${T('Открыть','Open','Բացել')} →</button></div>`).join('')}</div>`;
 }
 
@@ -1988,9 +1991,10 @@ function opSave(){
   const op={id:Date.now(),type:d.type,amount:base,orig:amt,cur:d.cur,rate:fxRate(d.cur)/fxRate(S.currency),cat:d.cat,date:d.date||todayStr(),note:String(d.note||'').slice(0,120),acc:acc>=0&&S.accounts[acc]?acc:-1};
   if(op.acc>=0){const a=S.accounts[op.acc];a.balance=Math.round((num(a.balance)+(op.type==='in'?base:-base))*100)/100}
   {const li=d.loan===undefined||d.loan===''?-1:num(d.loan);if(op.type==='out'&&(op.cat==='prepay'||op.cat==='loan')&&li>=0&&S.loans[li]){const l=S.loans[li];l.balance=Math.max(0,Math.round((num(l.balance)-base)*100)/100);l.asOf=ymd(new Date());op.loan=li}}
+  {const ev=FC().events||[],tp=op.type==='out'?'oneExpense':'oneIncome',k=ev.findIndex(e=>e.type===tp&&ymd(fcMonth(Math.round(num(e.month)))).slice(0,7)===op.date.slice(0,7)&&Math.abs(Math.abs(num(e.amount))-base)<1);if(k>=0){ev.splice(k,1);op.replacedEv=1}}
   OPS().push(op);S.opView=monthKey(op.date);
   Object.assign(S.opDraft,{amount:0,note:'',cur:S.currency,date:todayStr()});save();render();
-  const mm=$('#opmsg');if(mm)mm.textContent='✓ '+T('Записано','Saved','Գրանցված է')+(op.acc>=0?' · '+T('баланс счёта обновлён','account balance updated','հաշվի մնացորդը թարմացվեց'):'');
+  const mm=$('#opmsg');if(mm)mm.textContent='✓ '+T('Записано','Saved','Գրանցված է')+(op.acc>=0?' · '+T('баланс счёта обновлён','account balance updated','հաշվի մնացորդը թարմացվեց'):'')+(op.replacedEv?' · '+T('такое же событие убрано из прогноза','the same planned event was removed from the forecast','նույն իրադարձությունը հանվեց կանխատեսումից'):'');
 }
 function opDelete(id){
   const ops=OPS(),i=ops.findIndex(o=>String(o.id)===String(id));if(i<0)return;const o=ops[i];
@@ -2088,7 +2092,7 @@ function render(){
     if(AUTH==='out'){authMode=authMode||'login';openAuth();$('#authmodal').classList.add('gate')}
     return}
   const v={home:vHome,plans:vPlans,taxes:vTaxes,profile:()=>vProfile()+dataCard(),money:vMoney,accounts:vAccounts,loans:vLoans,market:vMarket,analytics:vAnalytics,ops:vOps,forecast:vForecast,advice:vAdvice,calc:vCalc,reminders:vRem}[tab]||vHome;
-  $('#view').innerHTML=pageHead(tab)+(GUIDE.some(g=>g[0]===tab)?whereCard(tab)+dupesCard(tab):tab==='home'?dupesCard():'')+`<div id="brainout">${brainCard(tab,tab==='advice'?0:tab==='home'?4:3)}</div>`+v()+(tab==='loans'&&S.loans.length?rollNote():'');
+  $('#view').innerHTML=pageHead(tab)+(GUIDE.some(g=>g[0]===tab)?whereCard(tab)+dupesCard(tab):tab==='home'?dupesCard():tab==='forecast'?dupesCard('forecast'):'')+`<div id="brainout">${brainCard(tab,tab==='advice'?0:tab==='home'?4:3)}</div>`+v()+(tab==='loans'&&S.loans.length?rollNote():'');
   if(tab==='reminders')renderTg();
   live();
 }
