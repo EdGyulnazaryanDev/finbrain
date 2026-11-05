@@ -137,7 +137,7 @@ function buildImport(r, { mortgageBalance = 0, mortgageRate = 0, now = new Date(
   }
   if (s.cash) b.accounts.push({ bank: 'Наличные', type: 'cash', balance: s.cash, rate: 0, src });
   if (s.depositRate) { b.accounts.push({ bank: 'Вклад на цель', type: 'deposit', balance: 0, rate: s.depositRate, src }); b.depositTarget = true; }
-  if (s.taxRefund) for (let k = 1; k <= 24; k++) { const d = new Date(now.getFullYear(), now.getMonth() + k - 1, 1); if (s.taxRefund.months.includes(d.getMonth() + 1)) b.events.push({ month: k, type: 'oneIncome', amount: s.taxRefund.amount, acc: -1, note: 'Возврат налога', src }); }
+  if (s.taxRefund) b.incomes.push({ name: 'Возврат налога (ипотека)', amount: s.taxRefund.amount, freq: 'quarterly', month: ((Math.min(...s.taxRefund.months) - 1) % 3) + 1, day: 20, src });
   for (const p of r.plan || []) { const [y, m] = p.ym.split('-').map(Number); b.events.push({ month: Math.max(1, (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth()) + 1), type: 'oneExpense', amount: p.amount, acc: -1, note: p.note, src }); }
   if (s.goalDate) b.reminders.push({ title: s.goalLabel || 'Цель', cat: 'home', amount: 0, freq: 'once', date: s.goalDate, day: 1, month: 1, daysBefore: 30, active: true, src });
   return b;

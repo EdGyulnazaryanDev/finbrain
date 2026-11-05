@@ -37,6 +37,12 @@ function allReminders(data) {
     if (loanMode(l) !== 'monthly') loanPlan(l).forEach((x, k) => auto.push({ id: 'loan' + i + '_' + k, title, cat: 'loan', amount: x.amount, freq: 'once', date: x.date, daysBefore: 3, lastPaid: lp[i + '_' + k] }));
     else if (num(l.payment) > 0) auto.push({ id: 'loan' + i, title, cat: 'loan', amount: num(l.payment), freq: 'monthly', day: num(l.day) || 1, daysBefore: 3, lastPaid: lp[i] });
   });
+  const ip = data.incPaid || {};
+  (data.incomes || []).forEach((x, i) => {
+    const f = x.freq || 'monthly';
+    if (f === 'monthly' || !(num(x.amount) > 0)) return;
+    auto.push({ id: 'inc' + i, title: '💰 ' + (x.name || ''), cat: 'income', amount: num(x.amount), freq: f, day: num(x.day) || 15, month: num(x.month) || 1, date: x.date, daysBefore: 3, lastPaid: ip[i] });
+  });
   return [...auto, ...(data.reminders || []).map((r, i) => ({ ...r, id: 'u' + i }))].filter(r => r.active !== false);
 }
 

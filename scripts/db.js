@@ -19,7 +19,8 @@ const sum = (a, k) => (a || []).reduce((s, x) => s + (+x[k] || 0), 0);
 function summary(d) {
   if (!d) return '  (бюджет ещё не сохранён — войдите в приложение хотя бы раз)';
   const L = [];
-  L.push(`  Доходы:        ${(d.incomes || []).length} шт., ${amd(sum(d.incomes, 'amount'))}/мес.`);
+  const inc = d.incomes || [], mInc = inc.filter(x => (x.freq || 'monthly') === 'monthly'), pInc = inc.filter(x => (x.freq || 'monthly') !== 'monthly');
+  L.push(`  Доходы:        ${mInc.length} шт., ${amd(sum(mInc, 'amount'))}/мес.` + (pInc.length ? ` + периодические: ${pInc.map(x => x.name + ' ' + amd(x.amount) + ' (' + ({ quarterly: 'раз в квартал', yearly: 'раз в год', once: 'однократно' }[x.freq]) + ')').join(', ')}` : ''));
   L.push(`  Расходы:       ${(d.expenses || []).length} шт., ${amd(sum(d.expenses, 'amount'))}/мес.`);
   const mode = l => l.mode || (Array.isArray(l.schedule) && l.schedule.length ? (l.schedule.length === 1 ? 'once' : 'plan') : 'monthly');
   const monthly = (d.loans || []).filter(l => mode(l) === 'monthly'), temp = (d.loans || []).filter(l => mode(l) !== 'monthly');
