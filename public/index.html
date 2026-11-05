@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#5b5bf0">
+<title>Финансовый мозг — Finance Brain — Ֆինանսական ուղեղ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Armenian:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="toprow">
+      <div><h1 id="h1"></h1><p id="hsub"></p></div>
+      <div class="tsel">
+        <button id="userbtn" class="hbtn">👤</button>
+        <select id="lang" aria-label="Language"><option value="ru">RU</option><option value="en">EN</option><option value="hy">ՀՅ</option></select>
+        <select id="cur" aria-label="Currency"><option value="AMD">֏ AMD</option><option value="RUB">₽ RUB</option><option value="USD">$ USD</option><option value="EUR">€ EUR</option></select>
+      </div>
+    </div>
+  </div>
+</header>
+<div class="wrap">
+  <div class="kpis" id="kpis"></div>
+  <nav class="tabs" id="tabs"></nav>
+  <main id="view"></main>
+</div>
+<footer id="foot"></footer>
+<div id="authmodal" class="modal hide"><div class="card mbox" id="authbody"></div></div>
+<button id="aibtn" class="fab hide" aria-label="AI">🤖</button>
+<div id="aipanel" class="aipanel hide">
+  <div class="aihead"><b id="aititle">🤖 AI</b><button class="x" id="aiclose" style="height:32px;width:32px">✕</button></div>
+  <div id="aimsgs" class="aimsgs"></div>
+  <div id="aichips" class="aichips"></div>
+  <form id="aiform" class="aiform"><textarea id="aiin" rows="1"></textarea><button class="btn" id="aisend" type="submit">➤</button><button class="btn ghost hide" id="aistop" type="button">■</button></form>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

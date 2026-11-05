@@ -1,0 +1,211 @@
+{
+  "_comment": "Ставки банков и ЦБ, которые нельзя получить через открытый API. Обновляйте этот файл вручную (или через PUT /api/admin/banks). Курсы валют и биржа обновляются автоматически.",
+  "cba": {
+    "refi": 7,
+    "lombard": 8.5,
+    "deposit": 5.5,
+    "date": "2026-11-03"
+  },
+  "inflation": {
+    "yoy": 4.4,
+    "period": "2026-08"
+  },
+  "depositsDate": "2026-11-04",
+  "deposits": [
+    {
+      "bank": "Evocabank",
+      "product": "Evoca Online",
+      "rate": 10.75,
+      "term": "731–1825",
+      "min": 100000,
+      "cur": "AMD"
+    },
+    {
+      "bank": "Evocabank",
+      "product": "Classical",
+      "rate": 10.5,
+      "term": "731–1825",
+      "min": 100000,
+      "cur": "AMD"
+    },
+    {
+      "bank": "Evocabank",
+      "product": "Evoca Online",
+      "rate": 10.25,
+      "term": "550–730",
+      "min": 100000,
+      "cur": "AMD"
+    },
+    {
+      "bank": "Artsakhbank",
+      "product": "Time deposit",
+      "rate": 10,
+      "term": "366–550",
+      "min": null,
+      "cur": "AMD"
+    },
+    {
+      "bank": "ArmSwissBank",
+      "product": "Standard term",
+      "rate": 10,
+      "term": "733–1095",
+      "min": null,
+      "cur": "AMD"
+    },
+    {
+      "bank": "Inecobank",
+      "product": "Simple Deposit",
+      "rate": 10,
+      "term": "940–1095",
+      "min": null,
+      "cur": "AMD"
+    },
+    {
+      "bank": "Fast Bank",
+      "product": "Top-up deposit",
+      "rate": 10,
+      "term": "367–550",
+      "min": 50000,
+      "cur": "AMD"
+    },
+    {
+      "bank": "VTB Bank (Armenia)",
+      "product": "Stable",
+      "rate": 10,
+      "term": "365",
+      "min": 4000001,
+      "cur": "AMD"
+    }
+  ],
+  "mortgages": [
+    {
+      "bank": "Acba",
+      "rate": 8.5,
+      "down": null,
+      "term": "12–240",
+      "date": "2026-10-22",
+      "note": "8.5–14.5%; NMC 12.8–14.5%"
+    },
+    {
+      "bank": "IDBank",
+      "rate": 12.25,
+      "down": "0–10",
+      "term": "120–240",
+      "date": "2026-10-23",
+      "note": "12.25–14%; NMC 13–16.5%"
+    },
+    {
+      "bank": "Inecobank",
+      "rate": 12.5,
+      "down": "20",
+      "term": "36–360",
+      "date": "2026-10-21",
+      "note": "13% 3y, 12.5% salary client, then floating"
+    },
+    {
+      "bank": "Ardshinbank",
+      "rate": 12.7,
+      "down": "10",
+      "term": "120–240",
+      "date": "2026-09-02",
+      "note": "NMC 14.1–14.5%"
+    },
+    {
+      "bank": "Ameriabank",
+      "rate": 12.9,
+      "down": "10",
+      "term": "60–360",
+      "date": "2026-10-23",
+      "note": "new builds; 5.5% + base rate"
+    },
+    {
+      "bank": "Unibank",
+      "rate": 12.9,
+      "down": "10",
+      "term": "≤240",
+      "date": "2026-10-23",
+      "note": "new builds 12.9%, classic 13.3%"
+    },
+    {
+      "bank": "Evocabank",
+      "rate": 13.2,
+      "down": "10",
+      "term": "60–240",
+      "date": "2026-09-04",
+      "note": "floating; fixed 14–15%"
+    },
+    {
+      "bank": "Fast Bank",
+      "rate": 13.5,
+      "down": "10–30",
+      "term": "36–240",
+      "date": "2026-10-16",
+      "note": "NMC 13%"
+    }
+  ],
+  "consumer": {
+    "nominalFrom": 11,
+    "effMin": 13,
+    "effMax": 22,
+    "onlineFrom": 16,
+    "period": "2026"
+  },
+  "guarantee": {
+    "amd": 16000000,
+    "fx": 7000000
+  },
+  "sources": [
+    {
+      "t": "PRIME: ЦБ Армении повысил ставку до 7%",
+      "u": "https://1prime.ru/20261103/tsentrobank-874891634.html"
+    },
+    {
+      "t": "AFM: Deposits in Armenia",
+      "u": "https://afm.am/en/deposits"
+    },
+    {
+      "t": "WSE: Mortgage rates by bank",
+      "u": "https://wse.am/en/calculator/ipoteka"
+    },
+    {
+      "t": "AFM: Loan types in Armenia 2026",
+      "u": "https://afm.am/en/journal/cash-loans/what-types-of-loans-are-available-in-armenia-in-2026-products-rates-and-terms"
+    },
+    {
+      "t": "CBA: exchange rates API",
+      "u": "https://api.cba.am/exchangerates.asmx"
+    }
+  ],
+  "fxFallback": {
+    "date": "2026-11-04",
+    "USD": 360.12,
+    "EUR": 405.03,
+    "RUB": 4.3947,
+    "goldGram": 45579
+  },
+  "indicesFallback": {
+    "indicesDate": "2026-11-04",
+    "indices": [
+      {
+        "name": "S&P 500",
+        "value": 7688.62,
+        "chg": 1.58
+      },
+      {
+        "name": "Dow Jones",
+        "value": 53356.12,
+        "chg": 3.03
+      },
+      {
+        "name": "Nasdaq Composite",
+        "value": 25736.51,
+        "chg": 1.44
+      },
+      {
+        "name": "Russell 2000",
+        "value": 2856.96,
+        "chg": 1.58
+      }
+    ]
+  }
+}

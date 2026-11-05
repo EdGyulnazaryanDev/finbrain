@@ -1,0 +1,22 @@
+{
+  "name": "finbrain",
+  "version": "1.0.0",
+  "description": "Финансовый мозг — семейный бюджет, кредиты, счета, рынок Армении и AI-помощник",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "market:update": "node jobs/market.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.7.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3"
+  }
+}
