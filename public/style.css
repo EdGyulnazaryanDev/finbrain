@@ -139,3 +139,5 @@ input::placeholder{color:var(--muted);opacity:.6}
   header h1{font-size:19px}
 }
 html,body{overflow-x:hidden}
+.hbtn-op{background:#fff;color:var(--brand);border-color:#fff;font-weight:700}
+@media(max-width:720px){.hbtn-op{order:-1}}

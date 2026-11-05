@@ -17,6 +17,7 @@
     "better-sqlite3": "^11.7.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "node-cron": "^3.0.3"
+    "node-cron": "^3.0.3",
+    "read-excel-file": "^5.8.8"
   }
 }

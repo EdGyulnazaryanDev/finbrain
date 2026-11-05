@@ -8,6 +8,7 @@ const { q, getMarket } = require('./db');
 const ai = require('./ai');
 const market = require('./jobs/market');
 const reminders = require('./reminders');
+const { parseWorkbook } = require('./importer');
 
 const PORT = +process.env.PORT || 3000;
 const SESSION_DAYS = 30;
@@ -128,6 +129,13 @@ app.post('/api/ai', auth(), aiLimit, async (req, res) => {
     console.error('[ai]', e.message);
     res.status(e.status || 500).json({ error: 'ai_unavailable' });
   }
+});
+
+// --- импорт из Excel (только предпросмотр, данные пользователь подтверждает сам) ---
+app.post('/api/import/xlsx', auth(), express.raw({ type: () => true, limit: '5mb' }), async (req, res) => {
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'bad_file' });
+  try { res.json(await parseWorkbook(req.body)); }
+  catch (e) { console.error('[import]', e.message); res.status(400).json({ error: 'bad_file' }); }
 });
 
 // --- Telegram-напоминания ---
