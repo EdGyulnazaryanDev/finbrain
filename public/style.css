@@ -191,3 +191,8 @@ nav.side .more{display:none}
 .card.plan h3{margin:0;font-size:17px}
 .pbar{height:10px;background:var(--soft);border-radius:6px;overflow:hidden}
 .pbar>div{height:100%;background:linear-gradient(90deg,var(--c2),var(--brand));border-radius:6px}
+.durs{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px}
+.durs .chip{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:5px 11px;font:600 13px Inter,'Noto Sans Armenian',sans-serif;cursor:pointer}
+.durs .chip.on,.durs .chip:hover{background:var(--brand);color:#fff;border-color:var(--brand)}
+.durs .durin{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.durs .durin input{width:76px;padding:5px 8px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:inherit}

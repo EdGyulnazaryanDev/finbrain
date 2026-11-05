@@ -347,6 +347,7 @@ function planStats(p){
   if(fromYm>cur){done=0;if(p.to){left=0;for(const ym of ymRange(fromYm,p.to.slice(0,7)))left+=planOccIn(p,ym)}}
   const acc=S.accounts[num(p.acc)],rate=p.kind==='save'&&acc&&num(p.acc)>=0?num(acc.rate):0;
   let proj=null;if(p.kind==='save'&&p.to)proj=fvLump(done,rate,n,S.set.tax)+(n>0&&left>0?fvMonthly(left/n,rate,n,S.set.tax):left||0);
+  if(p.kind==='save'&&p.to&&p.from)proj=planSchedule(p).bal;
   const goal=num(p.goal);let need=null,reachM=null;
   if(p.kind==='save'&&goal>0){if(p.to&&n>0){const base=fvLump(done,rate,n,S.set.tax);need=Math.max(0,(goal-base)/Math.max(1e-9,fvMonthly(1,rate,n,S.set.tax)))}
     else if(!p.to&&planMonthly(p)>0){let b=done,k=0;const r=rate/1200*(1-S.set.tax/100);while(b<goal&&k<600){b=b*(1+r)+planMonthly(p);k++}reachM=k<600?k:Infinity}}
@@ -357,11 +358,38 @@ function vPlans(){
   const accOpts={'-1':[T('— не привязан —','— none —','— առանց հաշվի —')],...Object.fromEntries(S.accounts.map((a,i)=>[i,[(a.bank||lab(ATYPE[a.type]||''))+(num(a.rate)?` · ${num(a.rate)}%`:'')]]))};
   return `<div class="card"><h2>${T('Регулярные платежи и накопления','Recurring payments and savings','Պարբերական վճարներ և խնայողություններ')}</h2>
     <p class="sub">${T('Платёж или откладывание денег с выбранной частотой от одной даты до другой: рассрочка, абонемент, учёба, «копить на отпуск до июня». Можно указать дату в прошлом: тогда уже сделанные платежи посчитаются.','A payment or saving that repeats from one date to another: installments, memberships, tuition, “save for a holiday until June”. You can set a start date in the past and past payments are counted.','Վճար կամ խնայողություն, որը կրկնվում է մի ամսաթվից մինչև մյուսը. ապառիկ, աբոնեմենտ, ուսում, «խնայել արձակուրդի համար մինչև հունիս»։ Կարող եք նշել անցյալի ամսաթիվ, և արդեն կատարված վճարները կհաշվվեն։')}</p>
-    ${PLANS().map((p,i)=>`<div class="row r-loan2${activeNow(p)?'':' off'}">${inp(`plans.${i}.name`,T('Название','Name','Անվանում'),'str')}${sel(`plans.${i}.kind`,T('Что это','Type','Տեսակ'),PL_KIND)}${inp(`plans.${i}.amount`,T('Сумма за раз','Amount each time','Գումար ամեն անգամ'))}${sel(`plans.${i}.freq`,T('Как часто','How often','Որքան հաճախ'),PL_FREQ)}${dateF(`plans.${i}.from`,T('Первый платёж','First payment','Առաջին վճար'))}${dateF(`plans.${i}.to`,T('Последний (до даты)','Last (until)','Վերջին (մինչև)'))}${p.kind==='save'?sel(`plans.${i}.acc`,T('На какой счёт','Into account','Որ հաշվին'),accOpts)+inp(`plans.${i}.goal`,T('Цель (необяз.)','Goal (optional)','Նպատակ (ըստ ցանկ.)')):''}<button class="x" data-del="plans.${i}">✕</button></div>`).join('')||`<p class="muted">${T('Пока ничего нет.','Nothing yet.','Դեռ ոչինչ չկա։')}</p>`}
+    ${PLANS().map((p,i)=>`<div class="row r-loan2${activeNow(p)?'':' off'}">${inp(`plans.${i}.name`,T('Название','Name','Անվանում'),'str')}${sel(`plans.${i}.kind`,T('Что это','Type','Տեսակ'),PL_KIND)}${inp(`plans.${i}.amount`,T('Сумма за раз','Amount each time','Գումար ամեն անգամ'))}${sel(`plans.${i}.freq`,T('Как часто','How often','Որքան հաճախ'),PL_FREQ)}${dateF(`plans.${i}.from`,T('Первый платёж','First payment','Առաջին վճար'))}${dateF(`plans.${i}.to`,T('Последний (до даты)','Last (until)','Վերջին (մինչև)'))}${p.kind==='save'?sel(`plans.${i}.acc`,T('На какой счёт','Into account','Որ հաշվին'),accOpts)+inp(`plans.${i}.goal`,T('Цель (необяз.)','Goal (optional)','Նպատակ (ըստ ցանկ.)')):''}<button class="x" data-del="plans.${i}">✕</button>${durChips(i,p)}</div>`).join('')||`<p class="muted">${T('Пока ничего нет.','Nothing yet.','Դեռ ոչինչ չկա։')}</p>`}
     <div class="btns"><button class="btn ghost" data-add="plansave">+ ${T('Накопление','Saving','Խնայողություն')}</button><button class="btn ghost" data-add="planpay">+ ${T('Регулярный платёж','Recurring payment','Պարբերական վճար')}</button></div>
   </div><div id="plansout"></div>`;
 }
-function planCard(p){
+/* ---- interval: "на 24 месяца" + generated schedule ---- */
+let SCHED_OPEN={};
+function addMonthsDay(ds,n){const d=new Date(ds+'T00:00:00'),y=d.getFullYear(),m=d.getMonth()+n;return new Date(y,m,Math.min(d.getDate(),dim(y+Math.floor(m/12),((m%12)+12)%12)))}
+function planDur(i,n){const p=PLANS()[i];if(!p||!(n>0))return;if(!p.from)p.from=todayStr();const e=addMonthsDay(p.from,n);e.setDate(e.getDate()-1);p.to=ymd(e);p.months=n}
+function planDates(p){
+  const out=[];if(!p.from)return out;const f=p.freq||'monthly',f0=new Date(p.from+'T00:00:00'),end=p.to?new Date(p.to+'T00:00:00'):addMonthsDay(p.from,24);
+  if(f==='weekly'){for(let d=new Date(f0);d<=end&&out.length<600;d.setDate(d.getDate()+7))out.push(new Date(d));return out}
+  const step=f==='quarterly'?3:f==='yearly'?12:1;
+  for(let k=0;out.length<600;k++){const d=addMonthsDay(p.from,k*step);if(d>end)break;out.push(d)}
+  return out}
+function planSchedule(p){
+  const save=p.kind==='save',acc=S.accounts[num(p.acc)],rate=save&&acc&&num(p.acc)>=0?num(acc.rate):0,tax=S.set.tax/100,a=num(p.amount);
+  const ds=planDates(p),t=new Date();t.setHours(0,0,0,0);let bal=0,sum=0,prof=0,prev=null;
+  const rows=ds.map((d,k)=>{let i=0;if(save&&prev&&rate>0){i=bal*rate/100*((d-prev)/864e5)/365*(1-tax);bal+=i;prof+=i}bal+=a;sum+=a;prev=d;return{k:k+1,d,a,sum,i,bal,past:d<=t}});
+  if(save&&prev&&rate>0&&p.to){const e=new Date(p.to+'T00:00:00');if(e>prev){const i=bal*rate/100*((e-prev)/864e5)/365*(1-tax);bal+=i;prof+=i}}
+  return{rows,sum,prof,bal,rate,save,open:!p.to}}
+function durChips(i,p){const n=p.from&&p.to?Math.round((addMonthsDayDiff(p.from,p.to))):0;
+  return `<div class="durs"><span class="muted">${T('Срок:','Term:','Ժամկետ՝')}</span>${[3,6,12,24,36,60].map(m=>`<button class="chip${num(p.months)===m&&n===m?' on':''}" data-dur="${i}" data-n="${m}">${m} ${T('мес','mo','ամս')}</button>`).join('')}<label class="durin">${T('свой','custom','այլ')}<input type="number" min="1" max="600" inputmode="numeric" data-durin="${i}" value="${num(p.months)||''}" placeholder="${T('мес','mo','ամս')}"></label>${p.from&&p.to?`<span class="muted">→ ${planDates(p).length} ${T('платежей','payments','վճար')}, ${T('до','until','մինչև')} ${fdate(p.to)}</span>`:''}</div>`}
+function addMonthsDayDiff(a,b){const x=new Date(a+'T00:00:00'),y=new Date(b+'T00:00:00');y.setDate(y.getDate()+1);return (y.getFullYear()-x.getFullYear())*12+y.getMonth()-x.getMonth()}
+function schedHtml(p,i){
+  const s=planSchedule(p);if(!s.rows.length)return '';const open=!!SCHED_OPEN[i];
+  const head=`<button class="btn ghost" data-sched="${i}" style="margin-top:10px">📅 ${open?T('Скрыть график','Hide schedule','Թաքցնել ժամանակացույցը'):T(`График: ${s.rows.length} платежей`,`Schedule: ${s.rows.length} payments`,`Ժամանակացույց՝ ${s.rows.length} վճար`)}</button>`;
+  const tot=`<div class="grid" style="margin-top:10px">${stat(s.save?T('Всего вложите','Total contributions','Ընդհանուր ներդրում'):T('Всего заплатите','Total to pay','Ընդհանուր վճար'),fmt(s.sum))}${s.save?stat(T('Прибыль (проценты после налога)','Profit (interest after tax)','Շահույթ (տոկոսներ հարկից հետո)'),'+'+fmt(s.prof),'good')+stat(T('Итого на счёте','Final balance','Վերջնական մնացորդ'),fmt(s.bal),'good'):''}${s.open?`<div class="muted" style="font-size:12px;align-self:end">${T('Дата окончания не задана — показаны 24 месяца.','No end date set — showing 24 months.','Ավարտի ամսաթիվ չկա, ցույց է տրված 24 ամիս։')}</div>`:''}</div>`;
+  if(!open)return tot+head;
+  const tbl=`<div class="scroll" style="max-height:420px;overflow:auto;margin-top:10px"><table><tr><th>№</th><th>${T('Дата','Date','Ամսաթիվ')}</th><th class="n">${T('Сумма','Amount','Գումար')}</th><th class="n">${s.save?T('Вложено всего','Contributed','Ներդրված'):T('Оплачено всего','Paid total','Վճարված')}</th>${s.save?`<th class="n">${T('Проценты','Interest','Տոկոսներ')}</th><th class="n">${T('На счёте','Balance','Մնացորդ')}</th>`:`<th class="n">${T('Осталось','Remaining','Մնացել է')}</th>`}</tr>${s.rows.map(r=>`<tr style="${r.past?'opacity:.6':''}"><td>${r.k}${r.past?' ✓':''}</td><td>${fdate(ymd(r.d))}</td><td class="n">${fmt(r.a)}</td><td class="n">${fmt(r.sum)}</td>${s.save?`<td class="n good">${r.i?'+'+fmt(r.i):'—'}</td><td class="n"><b>${fmt(r.bal)}</b></td>`:`<td class="n">${fmt(s.sum-r.sum)}</td>`}</tr>`).join('')}</table></div>`;
+  return tot+head+tbl}
+
+function planCard(p,idx){
   const s=planStats(p),save=p.kind==='save';
   const total=s.left!=null?s.done+s.left:null,goal=s.goal>0?s.goal:null,base=save?(goal||s.proj||total):total;
   const pctv=base?Math.min(100,s.done/base*100):0;
@@ -369,21 +397,20 @@ function planCard(p){
   const lines=[];
   lines.push(stat(save?T('Отложено по плану','Saved so far','Խնայված է'):T('Уже оплачено','Paid so far','Արդեն վճարված'),fmt(s.done),save?'good':''));
   if(s.left!=null)lines.push(stat(save?T('Ещё отложить','Still to save','Դեռ խնայել'):T('Осталось заплатить','Still to pay','Մնացել է վճարել'),fmt(s.left)));
-  if(save&&s.proj!=null)lines.push(stat(T(`Будет к ${fdate(p.to)}`,`By ${fdate(p.to)}`,`Կլինի ${fdate(p.to)}-ին`)+(s.rate?' '+T('(с процентами)','(with interest)','(տոկոսներով)'):''),fmt(s.proj),'good'));
   lines.push(stat(T('В среднем в месяц','Per month on average','Միջինում ամսական'),fmt(planMonthly(p))));
   let tip='';
   if(save&&goal){if(s.need!=null)tip=s.proj>=goal?tipH('good',T('Успеваете','On track','Հասցնում եք'),T(`К ${fdate(p.to)} будет ≈${fmt(s.proj)} при цели ${fmt(goal)}.`,`By ${fdate(p.to)} you’ll have ≈${fmt(s.proj)} against a goal of ${fmt(goal)}.`,`Մինչև ${fdate(p.to)} կլինի ≈${fmt(s.proj)}՝ ${fmt(goal)} նպատակի դիմաց։`)):tipH('warn',T('Не успеваете','Behind schedule','Չեք հասցնում'),T(`Чтобы собрать ${fmt(goal)} к ${fdate(p.to)}, нужно откладывать ≈${fmt(s.need)} в месяц вместо ${fmt(planMonthly(p))}.`,`To reach ${fmt(goal)} by ${fdate(p.to)} you need ≈${fmt(s.need)} a month instead of ${fmt(planMonthly(p))}.`,`${fdate(p.to)}-ին ${fmt(goal)} հավաքելու համար պետք է ամսական ≈${fmt(s.need)}՝ ${fmt(planMonthly(p))}-ի փոխարեն։`));
     else if(s.reachM!=null)tip=tipH('',T('Когда соберёте','When you’ll get there','Երբ կհավաքեք'),isFinite(s.reachM)?T(`Цель ${fmt(goal)} будет собрана примерно в ${monthLabel(s.reachM)}.`,`You’ll reach ${fmt(goal)} around ${monthLabel(s.reachM)}.`,`${fmt(goal)} նպատակին կհասնեք մոտավորապես ${monthLabel(s.reachM)}։`):T('С такой суммой цель не собрать.','This amount won’t reach the goal.','Այս գումարով նպատակին չեք հասնի։'))}
   return `<div class="card plan"><div class="planh"><h3>${save?'🎯':'🔁'} ${esc(p.name||L(PL_KIND[p.kind||'pay']).slice(3))} ${status}</h3><span class="muted">${fmt(num(p.amount))} · ${L(PL_FREQ[p.freq||'monthly'])} · ${p.from?fdate(p.from):'…'} — ${p.to?fdate(p.to):T('без срока','no end','առանց ժամկետի')}${save&&s.acc?' · '+esc(s.acc.bank||''):''}</span></div>
     ${base?`<div class="pbar"><div style="width:${pctv}%"></div></div><div class="muted" style="font-size:12px;margin:4px 0 10px">${Math.round(pctv)}% ${goal?T('от цели','of goal','նպատակից'):T('выполнено','done','կատարված')}</div>`:''}
-    <div class="grid">${lines.join('')}</div>${tip}</div>`;
+    <div class="grid">${lines.join('')}</div>${tip}${schedHtml(p,idx)}</div>`;
 }
 function plansOut(){
   const ps=PLANS().filter(p=>num(p.amount)>0);if(!ps.length)return '';
   const act=ps.filter(activeNow),pay=act.filter(p=>p.kind!=='save').reduce((a,p)=>a+planMonthly(p),0),sv=act.filter(p=>p.kind==='save').reduce((a,p)=>a+planMonthly(p),0),c=calc();
   return `<div class="card"><div class="grid">${stat(T('Регулярные платежи в месяц','Recurring payments / month','Պարբերական վճարներ ամսական'),fmt(pay),'bad')}${stat(T('Откладываете в месяц','Saving / month','Խնայում եք ամսական'),fmt(sv),'good')}${stat(T('Свободно после всего','Free after everything','Ազատ է ամեն ինչից հետո'),fmt(c.fcf-sv),c.fcf-sv>=0?'good':'bad')}</div>
     ${c.fcf-sv<0?tipH('bad',T('Не хватает денег на план','Not enough money for the plan','Պլանի համար գումարը չի բավականացնում'),T(`После всех расходов остаётся ${fmt(c.fcf)}, а откладывать по плану нужно ${fmt(sv)}. Уменьшите сумму или продлите срок.`,`After all spending you have ${fmt(c.fcf)} left, but the plan needs ${fmt(sv)}. Lower the amount or extend the end date.`,`Բոլոր ծախսերից հետո մնում է ${fmt(c.fcf)}, իսկ պլանով պետք է խնայել ${fmt(sv)}։ Նվազեցրեք գումարը կամ երկարացրեք ժամկետը։`)):''}</div>
-  ${ps.map(planCard).join('')}`;
+  ${PLANS().map((p,i)=>num(p.amount)>0?planCard(p,i):'').join('')}`;
 }
 
 /* ================== HISTORY: reconstruct past from dates ================== */
@@ -1739,9 +1766,11 @@ function live(){
 /* ================== EVENTS ================== */
 document.addEventListener('input',e=>{
   const k=e.target.dataset.k;if(!k)return;
-  setPath(k,e.target.dataset.t==='num'?num(e.target.value):e.target.value);autoFill(k,e.target.value);save();live();
+  setPath(k,e.target.dataset.t==='num'?num(e.target.value):e.target.value);autoFill(k,e.target.value);
+  {const m=/^plans\.(\d+)\.from$/.exec(k),p=m&&PLANS()[+m[1]];if(p&&num(p.months)>0&&p.from)planDur(+m[1],num(p.months))}
+  save();live();
 });
-document.addEventListener('change',e=>{if(e.target.id==='impfile'&&e.target.files[0]){impUpload(e.target.files[0]);return}if(e.target.dataset.imp){IMPopt[e.target.dataset.imp]=e.target.checked;$('#impout').innerHTML=impOut();return}if(e.target.dataset.prefill){prefillPre(e.target.value);save();render();return}if(e.target.tagName==='SELECT'&&e.target.dataset.k){save();if(/^(reminders\.\d+\.freq|calc\.|loans\.\d+\.mode|incomes\.\d+\.freq|plans\.\d+\.(kind|freq)|scen\.events\.\d+\.type|scen\.target)/.test(e.target.dataset.k))render();else live()}});
+document.addEventListener('change',e=>{if(e.target.dataset.durin!==undefined){planDur(+e.target.dataset.durin,Math.round(num(e.target.value)));save();render();return}if(e.target.id==='impfile'&&e.target.files[0]){impUpload(e.target.files[0]);return}if(e.target.dataset.imp){IMPopt[e.target.dataset.imp]=e.target.checked;$('#impout').innerHTML=impOut();return}if(e.target.dataset.prefill){prefillPre(e.target.value);save();render();return}if(e.target.tagName==='SELECT'&&e.target.dataset.k){save();if(/^(reminders\.\d+\.freq|calc\.|loans\.\d+\.mode|incomes\.\d+\.freq|plans\.\d+\.(kind|freq)|scen\.events\.\d+\.type|scen\.target)/.test(e.target.dataset.k))render();else live()}});
 $('#cur').addEventListener('change',e=>{S.currency=e.target.value;save();render()});
 $('#lang').addEventListener('change',e=>{LANG=e.target.value;try{localStorage.setItem(KEY+'-lang',LANG)}catch(_){}translateDefaults();save();render()});
 document.addEventListener('click',e=>{
@@ -1751,6 +1780,8 @@ document.addEventListener('click',e=>{
   if(b.dataset.seg){let v=b.dataset.v;v=v==='true'?true:v==='false'?false:v;if(b.dataset.seg==='homeRange'){S.homeFrom='';S.homeTo='';v=v==='all'?'all':+v}setPath(b.dataset.seg,v);save();render();return}
   if(b.dataset.q){const focus=quickAdd(b.dataset.q,+b.dataset.i);save();render();const el=document.querySelector(`[data-k="${focus}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.tg){tgAction(b.dataset.tg);return}
+  if(b.dataset.dur!==undefined){planDur(+b.dataset.dur,+b.dataset.n);save();render();return}
+  if(b.dataset.sched!==undefined){SCHED_OPEN[b.dataset.sched]=!SCHED_OPEN[b.dataset.sched];if($('#plansout'))$('#plansout').innerHTML=plansOut();return}
   if(b.dataset.ev!==undefined){const f=addEvent(+b.dataset.ev);save();render();const el=document.querySelector(`[data-k="${f}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.op==='save'){opSave();return}
   if(b.dataset.opdel){opDelete(b.dataset.opdel);return}
