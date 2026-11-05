@@ -153,13 +153,15 @@ function calc(){
   const housing=p.housing.type==='rent'?num(p.housing.rent):num(p.housing.maint);
   const util=Object.values(p.util).reduce((s,v)=>s+num(v),0);
   let need=0,want=0;S.expenses.forEach(e=>{if(!activeNow(e))return;(CATS[e.cat]?.[1]==='need')?need+=num(e.amount):want+=num(e.amount)});
-  const loans=S.loans.filter(l=>!isTemp(l)&&activeNow(l)).reduce((s,l)=>s+num(l.payment),0);
+  const curYm0=ymd(new Date()).slice(0,7);
+  const loans=S.loans.filter(l=>!isTemp(l)&&activeNow(l)&&num(l.balance)>0).reduce((s,l)=>s+Math.min(num(l.payment),num(l.balance)*(1+num(l.rate)/1200)),0);
+  const loansT=S.loans.filter(isTemp).reduce((s,l)=>s+[...(num(l.balance)>0?loanPlan(l):[]),...(l.paidLog||[])].filter(x=>x.date.slice(0,7)===curYm0).reduce((a,x)=>a+num(x.amount),0),0);
   const soonList=S.loans.filter(isTemp).flatMap(l=>num(l.balance)>0?loanPlan(l).map(x=>({...x,l,days:daysUntil(x.date)})):[]).filter(x=>x.days<=30).sort((a,b)=>a.date.localeCompare(b.date));
   const soonPay=soonList.reduce((s,x)=>s+x.amount,0);
   const debt=S.loans.reduce((s,l)=>s+num(l.balance),0);
   const needs=need+kids+car+housing+util;
   const planPay=PLANS().filter(p=>p.kind!=='save'&&activeNow(p)).reduce((s,p)=>s+planMonthly(p),0),planSave=PLANS().filter(p=>p.kind==='save'&&activeNow(p)).reduce((s,p)=>s+planMonthly(p),0);
-  const spend=needs+want+loans+planPay;
+  const spend=needs+want+loans+loansT+planPay;
   const fcf=income-spend;
   const savingsRate=income>0?fcf/income*100:0;
   const dti=income>0?loans/income*100:0;
@@ -180,7 +182,7 @@ function calc(){
   const needShare=income>0?needs/income*100:100;
   sc+=needShare<=50?20:needShare<=65?12:needShare<=80?5:0;
   if(fcf<0)sc=Math.min(sc,25);
-  return{income,kids,car,housing,util,need,want,loans,debt,needs,spend,fcf,savingsRate,dti,cushion,target,essential,infos,free,soonList,soonPay,irregList,irregAvg,planPay,planSave,score:Math.round(sc),needShare,earners,savings,assets,passive,net:assets-debt};
+  return{income,kids,car,housing,util,need,want,loans:loans+loansT,debt,needs,spend,fcf,savingsRate,dti,cushion,target,essential,infos,free,soonList,soonPay,irregList,irregAvg,planPay,loansM:loans,loansT,planSave,score:Math.round(sc),needShare,earners,savings,assets,passive,net:assets-debt};
 }
 
 /* ================== UI PRIMITIVES ================== */
@@ -322,6 +324,36 @@ function ymRange(a,b){const out=[];let [y,m]=a.split('-').map(Number);const [y2,
 const monthlyIncAt=ym=>S.incomes.filter(x=>incFreq(x)==='monthly'&&activeIn(x,ym)).reduce((a,x)=>a+num(x.amount),0);
 const expAt=ym=>S.expenses.filter(e=>activeIn(e,ym)).reduce((a,e)=>a+num(e.amount),0);
 
+/* ---- auto-update loan balances by schedule (payments whose date has passed) ---- */
+function rollLoans(){
+  const today=ymd(new Date());let ch=false;
+  S.loans.forEach(l=>{
+    if(!l.asOf){l.asOf=today;ch=true;return}
+    if(l.asOf>=today)return;
+    let b=num(l.balance);const log=[];
+    if(isTemp(l)){
+      const past=loanPlan(l).filter(x=>x.date>l.asOf&&x.date<=today);
+      past.forEach(x=>{const pay=Math.min(x.amount,b);if(pay>0){b-=pay;log.push({date:x.date,amount:Math.round(pay*100)/100})}});
+      if(loanMode(l)==='plan'){l.schedule=(l.schedule||[]).filter(x=>ymDay(x.ym,l.day)>today);if(!l.schedule.length)b=0}
+      if(loanMode(l)==='once'&&past.length)b=0;
+    }else{
+      const r=num(l.rate)/1200,sch=Array.isArray(l.schedule)&&l.schedule.length?l.schedule:null;
+      for(const ym of ymRange(l.asOf.slice(0,7),today.slice(0,7))){const d=ymDay(ym,l.day);if(d<=l.asOf||d>today||b<=0.5)continue;
+        const due=sch?num((sch.find(x=>x.ym===ym)||{}).amount):num(l.payment);if(!(due>0))continue;
+        const i=b*r,pay=Math.min(due,b+i);b=b+i-pay;log.push({date:d,amount:Math.round(pay*100)/100,interest:Math.round(i*100)/100})}
+    }
+    if(log.length){l.balance=Math.max(0,Math.round(b*100)/100);l.paidLog=[...(l.paidLog||[]),...log].slice(-60)}
+    l.asOf=today;ch=true;
+  });
+  return ch;
+}
+function rollNote(){
+  const t=new Date(),from=ymd(new Date(t.getFullYear(),t.getMonth(),t.getDate()-31));
+  const items=S.loans.flatMap(l=>(l.paidLog||[]).filter(x=>x.date>=from).map(x=>({...x,n:l.name||''}))).sort((a,b)=>b.date.localeCompare(a.date));
+  const head=T('Остатки по кредитам обновляются сами: когда наступает дата платежа по графику, платёж вычитается из остатка (для ежемесячных — с учётом процентов). Если платёж не был сделан или сумма другая — просто исправьте остаток, отсчёт пойдёт от сегодняшнего дня.','Loan balances update by themselves: when a scheduled payment date passes, the payment is subtracted from the balance (with interest for monthly loans). If you missed a payment or paid a different amount, just correct the balance and counting restarts from today.','Վարկերի մնացորդները թարմացվում են ինքնաշխատ. երբ գալիս է գրաֆիկով վճարման օրը, վճարը հանվում է մնացորդից (ամսականների համար՝ տոկոսներով)։ Եթե վճարը չի կատարվել կամ գումարը այլ է, ուղղեք մնացորդը, և հաշվարկը կսկսվի այսօրվանից։');
+  return `<div class="card"><h2>🔄 ${T('Автоматическое погашение','Automatic repayment','Ինքնաշխատ մարում')}</h2><p class="sub">${head}</p>${items.length?`<div class="scroll"><table><tr><th>${T('Дата','Date','Ամսաթիվ')}</th><th>${T('Кредит','Loan','Վարկ')}</th><th class="n">${T('Платёж','Payment','Վճար')}</th><th class="n">${T('из них проценты','of which interest','որից տոկոսներ')}</th></tr>${items.slice(0,12).map(x=>`<tr><td>${fdate(x.date)}</td><td>${esc(x.n)}</td><td class="n">${fmt(x.amount)}</td><td class="n muted">${x.interest!=null?fmt(x.interest):'—'}</td></tr>`).join('')}</table></div>`:`<p class="muted" style="margin:0">${T('За последний месяц автоматических списаний не было.','No automatic payments in the last month.','Վերջին ամսում ինքնաշխատ վճարներ չեն եղել։')}</p>`}</div>`;
+}
+
 /* ================== RECURRING PAYMENTS & SAVINGS PLANS ================== */
 function PLANS(){if(!S.plans)S.plans=[];return S.plans}
 const PL_FREQ={weekly:['Каждую неделю','Weekly','Ամեն շաբաթ'],monthly:['Каждый месяц','Monthly','Ամեն ամիս'],quarterly:['Раз в квартал','Quarterly','Եռամսյակը մեկ'],yearly:['Раз в год','Yearly','Տարին մեկ']};
@@ -417,7 +449,7 @@ function plansOut(){
 function flowsIn(ym){
   const c=calc(),mid=new Date(ym+'-15T00:00:00');
   const inc=(S.profile.married?num(S.profile.partnerIncome):0)+S.incomes.reduce((a,x)=>a+(incFreq(x)==='monthly'?(activeIn(x,ym)?num(x.amount):0):incomeInMonth(x,mid)),0);
-  const loansM=S.loans.reduce((a,l)=>a+(isTemp(l)?loanPlan(l).filter(x=>x.date.slice(0,7)===ym).reduce((s,x)=>s+x.amount,0):(activeIn(l,ym)&&num(l.balance)>0?num(l.payment):0)),0);
+  const loansM=S.loans.reduce((a,l)=>a+(isTemp(l)?[...loanPlan(l),...(l.paidLog||[])].filter(x=>x.date.slice(0,7)===ym).reduce((s,x)=>s+x.amount,0):((l.paidLog||[]).some(x=>x.date.slice(0,7)===ym)?(l.paidLog||[]).filter(x=>x.date.slice(0,7)===ym).reduce((s,x)=>s+x.amount,0):activeIn(l,ym)&&num(l.balance)>0?num(l.payment):0)),0);
   const exp=c.housing+c.util+c.kids+c.car+expAt(ym)+loansM+PLANS().filter(p=>p.kind!=='save').reduce((a,p)=>a+planOccIn(p,ym),0);
   const om=(S.ops||[]).filter(o=>(o.date||'').slice(0,7)===ym);
   return{inc:inc+om.filter(o=>o.type==='in').reduce((a,o)=>a+o.amount,0),out:exp+om.filter(o=>o.type==='out').reduce((a,o)=>a+o.amount,0)};
@@ -524,7 +556,7 @@ function vMoney(){
 }
 function sumTable(){
   const c=calc();
-  const rows=[['🏠 '+T('Жильё','Housing','Բնակարան'),c.housing],['💡 '+T('Коммунальные','Utilities','Կոմունալ'),c.util],['👶 '+T('Дети и учёба','Kids & education','Երեխաներ և ուսում'),c.kids],['🚗 '+T('Машина','Car','Մեքենա'),c.car],['🛒 '+T('Обязательные','Essentials','Պարտադիր'),c.need],['🎉 '+T('Желания','Wants','Ցանկություններ'),c.want],['🏦 '+T('Кредиты','Loans','Վարկեր'),c.loans]].concat(c.planPay?[['🔁 '+T('Регулярные платежи','Recurring payments','Պարբերական վճարներ'),c.planPay]]:[]);
+  const rows=[['🏠 '+T('Жильё','Housing','Բնակարան'),c.housing],['💡 '+T('Коммунальные','Utilities','Կոմունալ'),c.util],['👶 '+T('Дети и учёба','Kids & education','Երեխաներ և ուսում'),c.kids],['🚗 '+T('Машина','Car','Մեքենա'),c.car],['🛒 '+T('Обязательные','Essentials','Պարտադիր'),c.need],['🎉 '+T('Желания','Wants','Ցանկություններ'),c.want],['🏦 '+T('Кредиты, ежемесячно','Loans, monthly','Վարկեր, ամսական'),c.loansM]].concat(c.loansT?[['⏱ '+T('Погашения по графику в этом месяце','Scheduled repayments this month','Այս ամսվա վճարումներ ըստ գրաֆիկի'),c.loansT]]:[]).concat(c.planPay?[['🔁 '+T('Регулярные платежи','Recurring payments','Պարբերական վճարներ'),c.planPay]]:[]);
   return `<table>${rows.map(r=>`<tr><td>${r[0]}</td><td class="n">${fmt(r[1])}</td><td class="n muted">${c.income?pct(r[1]/c.income*100):''}</td></tr>`).join('')}
   <tr><th>${T('Всего','Total','Ընդամենը')}</th><th class="n">${fmt(c.spend)}</th><th class="n">${c.income?pct(c.spend/c.income*100):''}</th></tr></table>`;
 }
@@ -1021,7 +1053,7 @@ async function afterLogin(){
   S=emptyState();
   try{const r=await api('/api/budget');S=normalize(r.data)}catch(_){}
   translateDefaults();
-  if(migrateRefund())pushBudget();
+  if(migrateRefund()|rollLoans())pushBudget();
 }
 async function init(){
   try{const r=await api('/api/me');USER=r.user;AIENABLED=r.ai}catch(_){}
@@ -1432,7 +1464,7 @@ function FC(){if(!S.scen)S.scen={events:[],infl:true,growth:0,horizon:24,target:
 
 function fcSim(events,M){
   const c=calc(),st=FC(),tax=S.set.tax/100;
-  const loans=S.loans.map(l=>{const t=isTemp(l);return{temp:t,name:l.name||lab(LTYPE[l.type]||''),b:num(l.balance),r:(t&&loanMode(l)==='once')?0:num(l.rate)/1200,p:t?0:num(l.payment),closed:null,sched:t?loanPlan(l).map(x=>({ym:x.date.slice(0,7),amount:x.amount})):(Array.isArray(l.schedule)&&l.schedule.length?l.schedule:null)}});
+  const loans=S.loans.map(l=>{const t=isTemp(l);return{skip1:!t&&!!l.asOf&&ymDay(ymd(new Date()).slice(0,7),l.day)<=l.asOf,temp:t,name:l.name||lab(LTYPE[l.type]||''),b:num(l.balance),r:(t&&loanMode(l)==='once')?0:num(l.rate)/1200,p:t?0:num(l.payment),closed:null,sched:t?loanPlan(l).map(x=>({ym:x.date.slice(0,7),amount:x.amount})):(Array.isArray(l.schedule)&&l.schedule.length?l.schedule:null)}});
   const curYm=ymd(new Date()).slice(0,7),ymOf=m=>ymd(fcMonth(m)).slice(0,7);
   const accs=S.accounts.map(a=>({name:a.bank||lab(ATYPE[a.type]||''),type:a.type,b:num(a.balance),r:num(a.rate)/1200}));
   if(!accs.length)accs.push({name:T('Свободные деньги','Spare cash','Ազատ գումար'),type:'current',b:0,r:0});
@@ -1472,7 +1504,7 @@ function fcSim(events,M){
     const ymX=ymOf(m),income=(baseInc+monthlyIncAt(ymX)-monthlyIncAt(curYm))*Math.pow(1+growth,Math.floor((m-1)/12))+incD+irr;
     const pPay=PLANS().filter(p=>p.kind!=='save').reduce((a,p)=>a+planOccIn(p,ymX),0);const expenses=Math.max(0,(baseExp+expAt(ymX)-expAt(curYm))*Math.pow(1+infl,(m-1)/12)+expD)+pPay;
     let payments=0,interest=0;
-    const ymM=ymOf(m);for(const l of loans){if(l.b<=0.5)continue;const i=l.b*l.r;let due=l.p;if(l.sched){const lastYm=l.sched.reduce((a,x)=>x.ym>a?x.ym:a,'');due=ymM>lastYm?(l.p>0?l.p:l.b+i):(l.temp&&ymM===lastYm)?l.b+i:l.sched.filter(x=>x.ym===ymM||(m===1&&x.ym<=curYm)).reduce((a,x)=>a+num(x.amount),0)}const pay=Math.min(due,l.b+i);interest+=i;payments+=pay;l.b=l.b+i-pay;if(l.b<=0.5){l.b=0;if(!l.closed){l.closed=m;closed.push(l.name)}}}
+    const ymM=ymOf(m);for(const l of loans){if(l.b<=0.5||(m===1&&l.skip1))continue;const i=l.b*l.r;let due=l.p;if(l.sched){const lastYm=l.sched.reduce((a,x)=>x.ym>a?x.ym:a,'');due=ymM>lastYm?(l.p>0?l.p:l.b+i):(l.temp&&ymM===lastYm)?l.b+i:l.sched.filter(x=>x.ym===ymM||(m===1&&x.ym<=curYm)).reduce((a,x)=>a+num(x.amount),0)}const pay=Math.min(due,l.b+i);interest+=i;payments+=pay;l.b=l.b+i-pay;if(l.b<=0.5){l.b=0;if(!l.closed){l.closed=m;closed.push(l.name)}}}
     for(const a of accs)if(a.b>0&&a.r>0)a.b+=a.b*a.r*(1-tax);
     const net=income-expenses-payments;
     if(net>=0)accs[main].b+=net;else withdraw(-net);
@@ -1742,7 +1774,7 @@ function render(){
     if(AUTH==='out'){authMode=authMode||'login';openAuth();$('#authmodal').classList.add('gate')}
     return}
   const v={home:vHome,plans:vPlans,profile:()=>vProfile()+dataCard(),money:vMoney,accounts:vAccounts,loans:vLoans,market:vMarket,analytics:vAnalytics,ops:vOps,forecast:vForecast,advice:vAdvice,calc:vCalc,reminders:vRem}[tab]||vHome;
-  $('#view').innerHTML=pageHead(tab)+v();
+  $('#view').innerHTML=pageHead(tab)+v()+(tab==='loans'&&S.loans.length?rollNote():'');
   if(tab==='reminders')renderTg();
   live();
 }
@@ -1767,6 +1799,7 @@ function live(){
 document.addEventListener('input',e=>{
   const k=e.target.dataset.k;if(!k)return;
   setPath(k,e.target.dataset.t==='num'?num(e.target.value):e.target.value);autoFill(k,e.target.value);
+  {const m=/^loans\.(\d+)\.(balance|schedule)/.exec(k);if(m&&S.loans[+m[1]])S.loans[+m[1]].asOf=ymd(new Date())}
   {const m=/^plans\.(\d+)\.from$/.exec(k),p=m&&PLANS()[+m[1]];if(p&&num(p.months)>0&&p.from)planDur(+m[1],num(p.months))}
   save();live();
 });
