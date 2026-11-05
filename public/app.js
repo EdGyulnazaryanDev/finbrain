@@ -649,6 +649,46 @@ function homeMore(){
   ${HF().loans?homeInterest():''}`;
 }
 
+/* ================== THIS MONTH: earned / spent / still to pay ================== */
+function monthNow(){
+  const t=new Date();t.setHours(0,0,0,0);const y=t.getFullYear(),m=t.getMonth(),ym=ymd(t).slice(0,7),D=dim(y,m),day=t.getDate(),m0=new Date(y,m,1),mEnd=new Date(y,m,D),m0s=ymd(m0),c=calc();
+  const spent=[],todo=[],incGot=[],incWait=[],saved=[];
+  for(const r of allReminders()){if(!r.auto||r.active===false)continue;let from=m0;
+    for(let k=0;k<8;k++){const d=nextOcc({...r,lastPaid:null},from);if(!d||d>mEnd)break;
+      const it={n:r.title||'',v:num(r.amount),d,cat:r.cat},done=d<t||(r.lastPaid&&r.lastPaid>=m0s&&r.lastPaid>=ymd(new Date(d.getFullYear(),d.getMonth(),d.getDate()-10)));
+      if(r.cat==='income')(done?incGot:incWait).push(it);else if(r.cat==='save')saved.push({...it,done});else(done?spent:todo).push(it);
+      from=new Date(d);from.setDate(from.getDate()+1);if(r.freq==='once')break}}
+  S.loans.forEach(l=>{if(isTemp(l))(l.paidLog||[]).filter(x=>x.date.slice(0,7)===ym).forEach(x=>spent.push({n:l.name||'',v:x.amount,d:new Date(x.date+'T00:00:00'),cat:'loan'}))});
+  const ops=(S.ops||[]).filter(o=>(o.date||'').slice(0,7)===ym),opsIn=ops.filter(o=>o.type==='in').reduce((a,o)=>a+o.amount,0),opsOut=ops.filter(o=>o.type==='out').reduce((a,o)=>a+o.amount,0);
+  const living=c.needs+c.want,livingSpent=living*day/D,livingLeft=living-livingSpent;
+  const sum=a=>a.reduce((s,x)=>s+x.v,0);
+  const incBase=c.income,got=incBase+sum(incGot)+opsIn,wait=sum(incWait),earned=got+wait;
+  const spentObl=sum(spent),todoObl=sum(todo),spentAll=opsOut+spentObl+livingSpent,todoAll=todoObl+livingLeft;
+  return{t,day,D,ym,incBase,incGot,incWait,opsIn,opsOut,spent,todo,saved,living,livingSpent,livingLeft,got,wait,earned,spentObl,todoObl,spentAll,todoAll,left:earned-spentAll-todoAll};
+}
+function monthCard(){
+  const x=monthNow();if(!(x.earned>0||x.spentAll>0))return '';
+  const mx=Math.max(x.earned,x.spentAll+x.todoAll,1),w=v=>Math.max(0,v/mx*100);
+  const seg=(v,col,title,op)=>v>0?`<div style="width:${w(v)}%;background:${col};${op?'opacity:.45;':''}" title="${esc(title)}: ${fmt(v)}"></div>`:'';
+  const pctDay=(x.day-0.5)/x.D*100;
+  // timeline of remaining payments
+  const W=760,H=96,P=24,xd=d=>P+(W-2*P)*(d-1)/(x.D-1),mxT=Math.max(1,...x.todo.map(i=>i.v),...x.spent.map(i=>i.v),...(S.ops||[]).filter(o=>(o.date||'').slice(0,7)===x.ym).map(o=>o.amount));
+  const dot=(i,future)=>{const r=4+10*Math.sqrt(i.v/mxT);return `<circle cx="${xd(i.d.getDate())}" cy="52" r="${r}" fill="${i.cat==='income'?'var(--c2)':'var(--c4)'}" opacity="${future?.9:.3}"><title>${fdate(ymd(i.d))} · ${esc(i.n)}: ${fmt(i.v)}</title></circle>${future&&i.v>=mxT*0.25?`<text x="${xd(i.d.getDate())}" y="${52-r-5}" font-size="11" text-anchor="middle" fill="var(--ink)">${k1(i.v)}</text>`:''}`};
+  const ticks=[1,5,10,15,20,25,x.D].map(d=>`<text x="${xd(d)}" y="${H-4}" font-size="11" text-anchor="middle" fill="var(--muted)">${d}</text>`).join('');
+  const tl=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:120px"><line x1="${P}" x2="${W-P}" y1="52" y2="52" stroke="var(--line)" stroke-width="6" stroke-linecap="round"/><line x1="${P}" x2="${xd(x.day)}" y1="52" y2="52" stroke="var(--brand)" stroke-width="6" stroke-linecap="round" opacity=".5"/>${[...x.spent,...(S.ops||[]).filter(o=>(o.date||'').slice(0,7)===x.ym).map(o=>({n:o.note||L((opCats(o.type)[o.cat]||OP_OUT.other).slice(1,4)),v:o.amount,d:new Date(o.date+'T00:00:00'),cat:o.type==='in'?'income':'op'}))].map(i=>dot(i,false)).join('')}${x.incWait.map(i=>dot(i,true)).join('')}${x.todo.map(i=>dot(i,true)).join('')}<line x1="${xd(x.day)}" x2="${xd(x.day)}" y1="18" y2="70" stroke="var(--brand)" stroke-width="2"/><text x="${xd(x.day)}" y="14" font-size="11" text-anchor="middle" fill="var(--brand)" font-weight="700">${T('сегодня','today','այսօր')}</text>${ticks}</svg>`;
+  const todo=[...x.todo,...x.incWait].sort((a,b)=>a.d-b.d);
+  return `<div class="card month"><h2>📅 ${T('Этот месяц','This month','Այս ամիսը')} · ${MONTHS()[x.t.getMonth()]} ${x.t.getFullYear()}<span class="muted" style="font-weight:500;font-size:13px"> · ${T(`день ${x.day} из ${x.D}`,`day ${x.day} of ${x.D}`,`${x.day}-րդ օր ${x.D}-ից`)}</span></h2>
+  <div class="grid">${stat(T('Заработано','Earned','Վաստակած'),'+'+fmt(x.got),'good')}${stat(T('Потрачено','Spent','Ծախսված'),'−'+fmt(x.spentAll),'bad')}${stat(T('Ещё заплатить','Still to pay','Դեռ վճարել'),'−'+fmt(x.todoAll),'warn')}${stat(T('Останется к концу месяца','Left at month end','Կմնա ամսվա վերջում'),(x.left>=0?'+':'−')+fmt(Math.abs(x.left)),x.left>=0?'good':'bad')}</div>
+  <div class="mbars">
+    <div class="mrow"><span class="mlab">💰 ${T('Доходы','Income','Եկամուտ')}</span><div class="stackbar">${seg(x.incBase,'var(--c2)',T('Зарплата и выручка','Salary & revenue','Աշխատավարձ և հասույթ'))}${seg(x.incGot.reduce((a,i)=>a+i.v,0),'var(--c5)',T('Поступления по графику','Scheduled income','Մուտքեր ըստ գրաֆիկի'))}${seg(x.opsIn,'var(--c6)',T('Разовые поступления','One-off income','Միանվագ մուտքեր'))}${seg(x.wait,'var(--c2)',T('Ещё придёт','Still to come','Դեռ կգա'),1)}</div><b class="mnum">${fmt(x.earned)}</b></div>
+    <div class="mrow"><span class="mlab">💸 ${T('Расходы','Spending','Ծախսեր')}</span><div class="stackbar">${seg(x.opsOut,'var(--c7)',T('Разовые траты','One-off spending','Միանվագ ծախսեր'))}${seg(x.spentObl,'var(--c4)',T('Оплачено: кредиты, налоги, платежи','Paid: loans, taxes, payments','Վճարված՝ վարկեր, հարկեր'))}${seg(x.livingSpent,'var(--c1)',T('Ежедневные траты (по дням)','Everyday spending (by days)','Ամենօրյա ծախսեր'))}${seg(x.todoObl,'var(--c4)',T('Ещё заплатить: кредиты, налоги, платежи','To pay: loans, taxes, payments','Վճարել՝ վարկեր, հարկեր'),1)}${seg(x.livingLeft,'var(--c1)',T('Ежедневные траты до конца месяца','Everyday spending to month end','Ամենօրյա ծախսեր մինչև ամսվա վերջ'),1)}</div><b class="mnum">${fmt(x.spentAll+x.todoAll)}</b></div>
+  </div>
+  <div class="legend" style="flex-direction:row;flex-wrap:wrap;gap:8px 16px;margin:8px 0 4px"><div><i style="background:var(--c2)"></i>${T('Зарплата и выручка','Salary & revenue','Աշխատավարձ և հասույթ')}</div><div><i style="background:var(--c6)"></i>${T('Разовые поступления','One-off income','Միանվագ մուտքեր')}</div><div><i style="background:var(--c7)"></i>${T('Разовые траты','One-off spending','Միանվագ ծախսեր')} ${fmt(x.opsOut)}</div><div><i style="background:var(--c4)"></i>${T('Кредиты, налоги, платежи','Loans, taxes, payments','Վարկեր, հարկեր, վճարներ')} ${fmt(x.spentObl+x.todoObl)}</div><div><i style="background:var(--c1)"></i>${T('Ежедневные траты','Everyday spending','Ամենօրյա ծախսեր')} ${fmt(x.living)}</div><div><i style="background:var(--muted);opacity:.45"></i>${T('бледным — ещё впереди','faded: still ahead','գունաթափ՝ դեռ առջևում')}</div></div>
+  ${tl}
+  ${todo.length?`<h3 style="margin:10px 0 6px">${T('До конца месяца','Until month end','Մինչև ամսվա վերջ')}</h3><div class="scroll"><table>${todo.slice(0,10).map(i=>{const dd=Math.round((i.d-x.t)/864e5),inc=i.cat==='income';return `<tr><td style="white-space:nowrap;width:70px"><b>${i.d.getDate()} ${MONTHS()[i.d.getMonth()]}</b></td><td>${esc(i.n)}<br><span class="muted" style="font-size:12px">${dd===0?T('сегодня','today','այսօր'):T(`через ${dd} дн.`,`in ${dd} days`,`${dd} օրից`)}</span></td><td class="n ${inc?'good':''}"><b>${inc?'+':'−'}${fmt(i.v)}</b></td></tr>`}).join('')}</table></div>`:`<p class="muted">${T('До конца месяца платежей по графику больше нет.','No more scheduled payments this month.','Այս ամիս գրաֆիկով վճարումներ այլևս չկան։')}</p>`}
+  <p class="sub" style="margin-top:8px">${T('Ежедневные траты (продукты, жильё, коммунальные и т. п.) считаются равномерно по дням месяца. Кредиты, налоги ИП и регулярные платежи — по их датам. Разовые — по «Операциям».','Everyday spending (groceries, housing, utilities, etc.) is spread evenly over the days of the month. Loans, business taxes and recurring payments follow their dates; one-offs come from Transactions.','Ամենօրյա ծախսերը բաշխվում են ամսվա օրերով հավասարաչափ։ Վարկերը, հարկերը և պարբերական վճարները՝ ըստ իրենց ամսաթվերի։')}</p></div>`;
+}
+
 /* ================== BRAIN: proactive, number-backed suggestions ================== */
 let SG_ACT={};
 const EMP_O={pension:'mandatory',it:false,health:true};
@@ -751,6 +791,12 @@ function findDupes(){
     else if(sameName&&(sameAmt||x.w!==y.w))out.push({t:y.w,m:T(`${lbl(x)} и ${lbl(y)} — одно и то же название в двух местах. Возможно, внесено дважды.`,`${lbl(x)} and ${lbl(y)} share a name in two places. It may be entered twice.`,`${lbl(x)} և ${lbl(y)}՝ նույն անվանումը երկու տեղում։ Հնարավոր է՝ լրացված է երկու անգամ։`)});
     else if(sameAmt&&x.w===y.w&&x.kind===y.kind&&x.a>=10000)out.push({t:x.w,m:T(`${lbl(x)} и ${lbl(y)} — одинаковые суммы. Проверьте, не дубль ли это.`,`${lbl(x)} and ${lbl(y)} have identical amounts. Check it isn’t a duplicate.`,`${lbl(x)} և ${lbl(y)}՝ նույն գումարները։ Ստուգեք՝ կրկնօրինակ չէ՞։`)});
   }
+  {const pr=S.profile,car=pr.car||{},prof=[];
+    if(car.has){prof.push([T('Машина: налог','Car: tax','Մեքենա՝ գույքահարկ'),car.tax,'yearly'],[T('Машина: страховка','Car: insurance','Մեքենա՝ ապահովագրություն'),car.insurance,'yearly'],[T('Машина: обслуживание','Car: service','Մեքենա՝ սպասարկում'),car.service,'yearly'],[T('Машина: бензин','Car: fuel','Մեքենա՝ վառելիք'),car.fuel,'monthly'],[T('Машина: парковка','Car: parking','Մեքենա՝ կայանատեղի'),car.parking,'monthly'])}
+    (pr.kids||[]).forEach(k=>prof.push([T('Учёба ребёнка','Child’s tuition','Երեխայի ուսում'),k.tuitionYear,'yearly'],[T('Ребёнок в месяц','Child per month','Երեխա ամսական'),k.monthly,'monthly']));
+    if(pr.housing)prof.push([T('Аренда','Rent','Վարձ'),pr.housing.rent,'monthly'],[T('Обслуживание жилья','Home maintenance','Բնակարանի սպասարկում'),pr.housing.maint,'monthly']);
+    Object.entries(pr.util||{}).forEach(([k,v])=>prof.push([T('Коммунальные','Utilities','Կոմունալ')+' · '+k,v,'monthly']));
+    prof.filter(x=>num(x[1])>0).forEach(([n,a,f])=>{[...PLANS().filter(p=>p.kind!=='save').map(p=>({n:p.name,a:num(p.amount),f:p.freq||'monthly',w:'plans',k:T('регулярный платёж','recurring payment','պարբերական վճար')})),...S.expenses.map(e=>({n:e.name,a:num(e.amount),f:'monthly',w:'money',k:T('расход','expense','ծախս')}))].forEach(y=>{if(eq(a,y.a)&&y.f===f)out.push({t:y.w,also:['profile'],m:T(`«${esc(n)}» ${fmt(num(a))} уже указан во вкладке «Семья и жильё», и такая же сумма есть как ${y.k} «${esc(y.n||'')}». Оставьте одно: в «Семье» годовая сумма делится на 12 месяцев, а в «Регулярных» платёж стоит на свою дату и попадает в напоминания.`,`“${esc(n)}” ${fmt(num(a))} is already in Family & home, and the same amount is a ${y.k} “${esc(y.n||'')}”. Keep one: Family spreads a yearly amount over 12 months; Recurring puts it on its date with a reminder.`,`«${esc(n)}» ${fmt(num(a))} արդեն նշված է «Ընտանիք և բնակարան»-ում, և նույն գումարը կա որպես ${y.k} «${esc(y.n||'')}»։ Թողեք մեկը։`)})})});}
   S.expenses.forEach(e=>{if(/кредит|ипотек|заём|займ|loan|mortgage|վարկ|հիփոթեք/i.test(String(e.name||''))&&S.loans.length)out.push({t:'money',m:T(`Расход «${esc(e.name)}» похож на платёж по кредиту. Если кредит есть во вкладке «Кредиты», уберите его из расходов.`,`Expense “${esc(e.name)}” looks like a loan payment. If the loan is in Loans, remove it from spending.`,`«${esc(e.name)}» ծախսը նման է վարկի վճարի։ Եթե վարկը կա «Վարկեր»-ում, հանեք ծախսերից։`)})});
   const seen={};(S.ops||[]).forEach(o=>{const k=o.type+'|'+o.date+'|'+Math.round(o.amount)+'|'+o.cat;if(seen[k])out.push({t:'ops',m:T(`Две одинаковые операции ${fdate(o.date)} на ${fmt(o.amount)}. Если это одна и та же — удалите лишнюю.`,`Two identical transactions on ${fdate(o.date)} for ${fmt(o.amount)}. If it’s the same one, delete the extra.`,`Երկու նույն գործարք ${fdate(o.date)}՝ ${fmt(o.amount)}։ Եթե նույնն է, ջնջեք ավելորդը։`)});seen[k]=1});
   (FC().events||[]).forEach(ev=>{if(ev.type!=='oneExpense'&&ev.type!=='oneIncome')return;const ym=ymd(fcMonth(Math.round(num(ev.month)))).slice(0,7),tp=ev.type==='oneExpense'?'out':'in';
@@ -2092,7 +2138,7 @@ function render(){
     if(AUTH==='out'){authMode=authMode||'login';openAuth();$('#authmodal').classList.add('gate')}
     return}
   const v={home:vHome,plans:vPlans,taxes:vTaxes,profile:()=>vProfile()+dataCard(),money:vMoney,accounts:vAccounts,loans:vLoans,market:vMarket,analytics:vAnalytics,ops:vOps,forecast:vForecast,advice:vAdvice,calc:vCalc,reminders:vRem}[tab]||vHome;
-  $('#view').innerHTML=pageHead(tab)+(GUIDE.some(g=>g[0]===tab)?whereCard(tab)+dupesCard(tab):tab==='home'?dupesCard():tab==='forecast'?dupesCard('forecast'):'')+`<div id="brainout">${brainCard(tab,tab==='advice'?0:tab==='home'?4:3)}</div>`+v()+(tab==='loans'&&S.loans.length?rollNote():'');
+  $('#view').innerHTML=pageHead(tab)+(GUIDE.some(g=>g[0]===tab)?whereCard(tab)+dupesCard(tab):tab==='home'?dupesCard():tab==='forecast'||tab==='profile'?dupesCard(tab):'')+(tab==='home'||tab==='ops'?`<div id="monthout">${monthCard()}</div>`:'')+`<div id="brainout">${brainCard(tab,tab==='advice'?0:tab==='home'?4:3)}</div>`+v()+(tab==='loans'&&S.loans.length?rollNote():'');
   if(tab==='reminders')renderTg();
   live();
 }
@@ -2110,6 +2156,7 @@ function live(){
   if($('#fcout'))$('#fcout').innerHTML=fcOut();
   if($('#remout'))$('#remout').innerHTML=remOut();
   if($('#plansout'))$('#plansout').innerHTML=plansOut();
+  if($('#monthout'))$('#monthout').innerHTML=monthCard();
   if($('#brainout'))$('#brainout').innerHTML=brainCard(tab,tab==='advice'?0:tab==='home'?4:3);
   if($('#taxout'))$('#taxout').innerHTML=taxOut();
   if($('#homeout'))$('#homeout').innerHTML=homeOut()+homeMore()+homePlans();
