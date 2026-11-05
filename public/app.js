@@ -146,7 +146,7 @@ function migrateRefund(){ // старый импорт: возврат нало�
   return true}
 function calc(){
   const p=S.profile;
-  const income=S.incomes.filter(x=>incFreq(x)==='monthly'&&activeNow(x)).reduce((s,x)=>s+num(x.amount),0)+(p.married?num(p.partnerIncome):0);
+  const income=S.incomes.filter(x=>incFreq(x)==='monthly'&&activeNow(x)).reduce((s,x)=>s+num(x.amount),0)+(p.married?num(p.partnerIncome):0)+bizCalc().rev;
   const irregList=S.incomes.filter(x=>incFreq(x)!=='monthly'&&num(x.amount)>0&&(incFreq(x)==='once'||activeNow(x))),irregAvg=irregList.reduce((s,x)=>s+incAvg(x),0);
   const kids=p.kids.reduce((s,k)=>s+num(k.monthly)+num(k.tuitionYear)/12,0);
   const car=p.car.has?num(p.car.fuel)+num(p.car.parking)+(num(p.car.insurance)+num(p.car.service)+num(p.car.tax))/12:0;
@@ -161,7 +161,8 @@ function calc(){
   const debt=S.loans.reduce((s,l)=>s+num(l.balance),0);
   const needs=need+kids+car+housing+util;
   const planPay=PLANS().filter(p=>p.kind!=='save'&&activeNow(p)).reduce((s,p)=>s+planMonthly(p),0),planSave=PLANS().filter(p=>p.kind==='save'&&activeNow(p)).reduce((s,p)=>s+planMonthly(p),0);
-  const spend=needs+want+loans+loansT+planPay;
+  const bz=bizCalc();
+  const spend=needs+want+loans+loansT+planPay+bz.cost;
   const fcf=income-spend;
   const savingsRate=income>0?fcf/income*100:0;
   const dti=income>0?loans/income*100:0;
@@ -182,7 +183,7 @@ function calc(){
   const needShare=income>0?needs/income*100:100;
   sc+=needShare<=50?20:needShare<=65?12:needShare<=80?5:0;
   if(fcf<0)sc=Math.min(sc,25);
-  return{income,kids,car,housing,util,need,want,loans:loans+loansT,debt,needs,spend,fcf,savingsRate,dti,cushion,target,essential,infos,free,soonList,soonPay,irregList,irregAvg,planPay,loansM:loans,loansT,planSave,score:Math.round(sc),needShare,earners,savings,assets,passive,net:assets-debt};
+  return{income,kids,car,housing,util,need,want,loans:loans+loansT,debt,needs,spend,fcf,savingsRate,dti,cushion,target,essential,infos,free,soonList,soonPay,irregList,irregAvg,bizRev:bz.rev,bizCost:bz.cost,bizTax:bz.taxes,bizService:bz.service,planPay,loansM:loans,loansT,planSave,score:Math.round(sc),needShare,earners,savings,assets,passive,net:assets-debt};
 }
 
 /* ================== UI PRIMITIVES ================== */
@@ -198,6 +199,7 @@ const stat=(l,v,cl='')=>`<div><div class="muted" style="font-size:12px">${l}</di
 const PAGES={
   home:['📊',['Обзор','Overview','Ամփոփում'],['Главное за выбранный период: капитал, долги, доходы и расходы, ближайшие платежи','Key numbers for the chosen period: net worth, debts, income and spending, upcoming payments','Գլխավորը ընտրված ժամանակահատվածում. կապիտալ, պարտքեր, եկամուտներ և ծախսեր, մոտակա վճարումներ']],
   money:['💸',['Доходы и расходы','Income & spending','Եկամուտներ և ծախսեր'],['Регулярные доходы и ежемесячные траты','Regular income and monthly spending','Կանոնավոր եկամուտներ և ամսական ծախսեր']],
+  taxes:['🏛',['Налоги и ИП','Taxes & business','Հարկեր և ԱՁ'],['Налоги индивидуального предпринимателя, бухгалтер и когда платить','Sole-entrepreneur taxes, accountant and payment dates','ԱՁ հարկեր, հաշվապահ և վճարման ժամկետներ']],
   ops:['🧾',['Операции','Transactions','Գործարքներ'],['Разовые траты и поступления по датам','One-off spending and income by date','Միանվագ ծախսեր և մուտքեր ըստ ամսաթվերի']],
   accounts:['💳',['Счета','Accounts','Հաշիվներ'],['Деньги на картах, вкладах и наличными','Money on cards, deposits and in cash','Գումարներ քարտերում, ավանդներում և կանխիկ']],
   loans:['🏦',['Кредиты','Loans','Վարկեր'],['Кредиты и займы, даты платежей, импорт из Excel, новый кредит','Loans, payment dates, Excel import, planning a new loan','Վարկեր, վճարման ամսաթվեր, Excel ներմուծում, նոր վարկ']],
@@ -210,7 +212,7 @@ const PAGES={
   market:['📈',['Рынок','Market','Շուկա'],['Ставки ЦБ, курсы валют, вклады и ипотека в банках','CBA rates, exchange rates, bank deposits and mortgages','ԿԲ տոկոսադրույքներ, փոխարժեքներ, ավանդներ և հիփոթեք բանկերում']],
   profile:['👨‍👩‍👧',['Семья и жильё','Family & home','Ընտանիք և բնակարան'],['Состав семьи, дети, жильё, коммунальные, машина','Household, kids, home, utilities, car','Ընտանիքի կազմ, երեխաներ, բնակարան, կոմունալ, մեքենա']],
 };
-const NAV=[[null,['home']],[['Деньги','Money','Գումար'],['money','ops','accounts']],[['Долги','Debts','Պարտքեր'],['loans','calc']],[['План','Plan','Պլան'],['forecast','plans','advice','reminders']],[['Анализ','Insights','Վերլուծություն'],['analytics','market']],[['Настройки','Settings','Կարգավորումներ'],['profile']]];
+const NAV=[[null,['home']],[['Деньги','Money','Գումար'],['money','ops','accounts','taxes']],[['Долги','Debts','Պարտքեր'],['loans','calc']],[['План','Plan','Պլան'],['forecast','plans','advice','reminders']],[['Анализ','Insights','Վերլուծություն'],['analytics','market']],[['Настройки','Settings','Կարգավորումներ'],['profile']]];
 const NAV_PRI=['home','ops','loans','forecast'];
 function renderNav(){
   const nav=$('#tabs');nav.className='side';
@@ -265,7 +267,7 @@ function vHome(){
   return `<div class="card homebar">${seg('homeRange',[[30,T('1 мес','1 mo','1 ամս')],[90,T('3 мес','3 mo','3 ամս')],[180,T('6 мес','6 mo','6 ամս')],[365,T('1 год','1 yr','1 տարի')],['all',T('Всё','All','Բոլորը')]])}
     <label class="f">${T('с','from','սկսած')}<input type="date" data-k="homeFrom" data-t="str" value="${esc(S.homeFrom||p.fromS)}"></label>
     <label class="f">${T('по','to','մինչև')}<input type="date" data-k="homeTo" data-t="str" value="${esc(S.homeTo||p.toS)}"></label></div>
-  <div id="homeout">${homeOut()+homePlans()}</div>`;
+  <div class="card" style="padding:12px 16px">${hfChips()}</div><div id="homeout">${homeOut()+homeMore()+homePlans()}</div>`;
 }
 function homeOut(){
   const c=calc(),p=homePeriod(),today=new Date();today.setHours(0,0,0,0);
@@ -282,10 +284,10 @@ function homeOut(){
   // month bars: months of the period (max 12) + 6 forecast months
   const ms=[];{const a=new Date(p.from.getFullYear(),p.from.getMonth(),1),b=new Date(Math.min(+p.to,+today));b.setDate(1);for(const d=new Date(a);+d<=+b;d.setMonth(d.getMonth()+1))ms.push(new Date(d))}
   const curKey=ymd(today).slice(0,7);
-  const rowsM=ms.slice(-12).map(d=>{const k=ymd(d).slice(0,7),f=flowsIn(k);return{label:monthShort(d),inc:f.inc,out:f.out,cur:k===curKey}});
-  if(showFc)fc.rows.slice(2,8).forEach(r=>rowsM.push({label:monthShort(fcMonth(r.m)),inc:r.income+Math.max(0,r.one),out:r.expenses+r.payments+Math.max(0,-r.one),fc:true}));
+  const rowsM=ms.slice(-12).map(d=>{const k=ymd(d).slice(0,7),f=sumParts(flowParts(k));return{label:monthShort(d),inc:f.inc,out:f.out,cur:k===curKey}});
+  if(showFc)fc.rows.slice(2,8).forEach(r=>rowsM.push({label:monthShort(fcMonth(r.m)),inc:HF().inc?r.income+Math.max(0,r.one):0,out:(HF().exp?r.expenses:0)+(HF().loans?r.payments:0)+Math.max(0,-r.one),fc:true}));
   // spending structure
-  const items=[{n:T('Жильё','Housing','Բնակարան'),v:c.housing,c:'var(--c1)'},{n:T('Коммунальные','Utilities','Կոմունալ'),v:c.util,c:'var(--c5)'},{n:T('Дети и учёба','Kids & education','Երեխաներ և ուսում'),v:c.kids,c:'var(--c6)'},{n:T('Машина','Car','Մեքենա'),v:c.car,c:'var(--c3)'},{n:T('Обязательные','Essentials','Պարտադիր'),v:c.need,c:'var(--c2)'},{n:T('Желания','Wants','Ցանկություններ'),v:c.want,c:'var(--c7)'},{n:T('Кредиты','Loans','Վարկեր'),v:c.loans,c:'var(--c4)'},{n:T('Регулярные платежи','Recurring payments','Պարբերական վճարներ'),v:c.planPay,c:'var(--c8)'}].filter(x=>x.v>0);
+  const items=[{n:T('Жильё','Housing','Բնակարան'),v:c.housing,c:'var(--c1)'},{n:T('Коммунальные','Utilities','Կոմունալ'),v:c.util,c:'var(--c5)'},{n:T('Дети и учёба','Kids & education','Երեխաներ և ուսում'),v:c.kids,c:'var(--c6)'},{n:T('Машина','Car','Մեքենա'),v:c.car,c:'var(--c3)'},{n:T('Обязательные','Essentials','Պարտադիր'),v:c.need,c:'var(--c2)'},{n:T('Желания','Wants','Ցանկություններ'),v:c.want,c:'var(--c7)'},{n:T('Кредиты','Loans','Վարկեր'),v:c.loans,c:'var(--c4)'},{n:T('Регулярные платежи','Recurring payments','Պարբերական վճարներ'),v:c.planPay,c:'var(--c8)'},{n:T('Налоги и бухгалтер ИП','Business taxes & accountant','ԱՁ հարկեր և հաշվապահ'),v:c.bizCost,c:'var(--c3)'}].filter(x=>x.v>0);
   const colors=['var(--c1)','var(--c2)','var(--c3)','var(--c4)','var(--c5)','var(--c6)','var(--c7)','var(--c8)'],byCat={};ops.filter(o=>o.type==='out').forEach(o=>byCat[o.cat]=(byCat[o.cat]||0)+o.amount);
   const opItems=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,v],i)=>({n:(OP_OUT[k]||OP_OUT.other)[0]+' '+L((OP_OUT[k]||OP_OUT.other).slice(1,4)),v,c:colors[i%colors.length]}));
   // debts
@@ -476,6 +478,177 @@ function homePlans(){
     return `<div class="drow"><div class="dname">${save?'🎯':'🔁'} ${esc(p.name||'')}<span class="muted"> · ${p.to?T('до','until','մինչև')+' '+fdate(p.to):L(PL_FREQ[p.freq||'monthly'])}</span></div><div class="bar"><div style="width:${w}%;background:${save?'var(--c2)':'var(--c1)'}"></div></div><div class="n">${fmt(s.done)}${base?`<span class="muted" style="font-weight:400"> / ${fmt(base)}</span>`:''}</div></div>`}).join('')}</div>`;
 }
 
+/* ================== TAXES: individual entrepreneur (ИП / ԱՁ), Armenia 2026 ================== */
+function BIZ(){if(!S.biz)S.biz={on:false,from:'',regime:'turnover',activity:'other',revenue:0,cur:'AMD',docExp:0,social:true,health:'auto',accountant:0,accDay:10,bankFee:0,other:0,vat:false};return S.biz}
+const BIZ_REG={turnover:['Налог с оборота','Turnover tax','Շրջանառության հարկ'],micro:['Микробизнес (до 24 млн ֏ в год)','Microbusiness (up to AMD 24M a year)','Միկրոձեռնարկատիրություն (տարեկան մինչև 24 մլն ֏)'],general:['Общий режим (подоходный + НДС)','General regime (income tax + VAT)','Ընդհանուր ռեժիմ (եկամտային + ԱԱՀ)']};
+const BIZ_ACT={other:[['Услуги и прочее','Services & other','Ծառայություններ և այլ'],10,4.5],trade:[['Торговля','Trade','Առևտուր'],10,1],manuf:[['Производство','Manufacturing','Արտադրություն'],7,3],catering:[['Общепит','Catering','Հանրային սնունդ'],12,3.5],hitech:[['IT / высокие технологии (по списку правительства)','High-tech (government list)','Բարձր տեխնոլոգիաներ (կառավարության ցանկով)'],1,1]};
+const amdTo=x=>x/fxRate(S.currency);
+function bizCalc(ym){
+  const b=BIZ();const z={on:false,rev:0,cost:0,taxes:0,service:0,net:0,parts:[],tt:0,warn:[]};
+  if(!b.on||(ym&&!activeIn(b,ym)))return z;
+  const rev=toBase(num(b.revenue),b.cur||'AMD'),docE=num(b.docExp),yearAMD=rev*12*fxRate(S.currency),A=BIZ_ACT[b.activity]||BIZ_ACT.other;
+  let tt=0,inc=0,vat=0,profit=0;const warn=[];
+  if(b.regime==='turnover'){
+    tt=b.activity==='hitech'?rev*0.01:Math.max(rev*A[1]/100-docE*A[1]/100,rev*A[2]/100);profit=amdTo(5000);
+    if(yearAMD>115e6)warn.push(T('Оборот больше 115 млн ֏ в год — налог с оборота недоступен, нужен общий режим с НДС.','Turnover above AMD 115M a year: turnover tax is not available, the general regime with VAT applies.','Տարեկան 115 մլն ֏-ից ավելի շրջանառության դեպքում շրջանառության հարկը հասանելի չէ, կիրառվում է ընդհանուր ռեժիմ՝ ԱԱՀ-ով։'));
+  }else if(b.regime==='micro'){
+    if(yearAMD>24e6)warn.push(T(`Оборот ≈${fmt(rev*12)} в год — больше порога микробизнеса 24 млн ֏. После превышения льгота теряется.`,`Turnover ≈${fmt(rev*12)} a year is above the AMD 24M microbusiness limit; the exemption is lost once exceeded.`,`Տարեկան ≈${fmt(rev*12)} շրջանառությունը գերազանցում է միկրոձեռնարկատիրության 24 մլն ֏ շեմը։`));
+  }else{
+    inc=Math.max(0,rev-docE)*0.20;if(String(b.vat)==='true')vat=Math.max(0,rev-docE)*20/120;
+  }
+  const social=String(b.social)!=='false'?amdTo(5000):0;
+  const healthOn=b.health==='on'||(b.health==='auto'&&yearAMD>=2400001);const health=healthOn?amdTo(129600/12):0;
+  const stamp=amdTo((yearAMD<=12e6?12000:120000)/12);
+  const acc=num(b.accountant),bank=num(b.bankFee),oth=num(b.other);
+  const parts=[
+    {k:'tt',n:T('Налог с оборота','Turnover tax','Շրջանառության հարկ'),v:tt,c:'var(--c4)',tax:true},
+    {k:'inc',n:T('Подоходный налог 20%','Income tax 20%','Եկամտային հարկ 20%'),v:inc,c:'var(--c4)',tax:true},
+    {k:'vat',n:T('НДС','VAT','ԱԱՀ'),v:vat,c:'var(--c3)',tax:true},
+    {k:'profit',n:T('Налог на прибыль (фикс. 5 000 ֏)','Profit tax (fixed AMD 5,000)','Շահութահարկ (ֆիքս. 5 000 ֏)'),v:profit,c:'var(--c7)',tax:true},
+    {k:'social',n:T('Соцплатёж, пенсия (5 000 ֏)','Social / pension (AMD 5,000)','Սոցվճար, կենսաթոշակ (5 000 ֏)'),v:social,c:'var(--c5)',tax:true},
+    {k:'health',n:T('Медстраховка (129 600 ֏ в год)','Health insurance (AMD 129,600 a year)','Բժշկական ապահովագրություն (տարեկան 129 600 ֏)'),v:health,c:'var(--c6)',tax:true},
+    {k:'stamp',n:T('Гербовый сбор','Stamp duty','Դրոշմանիշային վճար'),v:stamp,c:'var(--c8)',tax:true},
+    {k:'acc',n:T('Бухгалтер','Accountant','Հաշվապահ'),v:acc,c:'var(--c1)'},
+    {k:'bank',n:T('Банк, касса, обслуживание','Bank, POS, service','Բանկ, դրամարկղ, սպասարկում'),v:bank,c:'var(--c2)'},
+    {k:'other',n:T('Прочие расходы ИП','Other business costs','Այլ ծախսեր'),v:oth,c:'var(--muted)'}].filter(x=>x.v>0);
+  const taxes=parts.filter(x=>x.tax).reduce((a,x)=>a+x.v,0),service=acc+bank+oth;
+  return{on:true,rev,cost:taxes+service,taxes,service,net:rev-taxes-service,parts,tt,inc,vat,warn,yearAMD,health,stamp,profit,social};
+}
+function vTaxes(){
+  const b=BIZ();
+  return `<div class="card"><h2>${T('Я работаю как ИП','I work as a sole entrepreneur','Աշխատում եմ որպես ԱՁ')}</h2>
+    <p class="sub">${T('Выручка ИП попадает в доходы, а налоги и бухгалтер — в расходы. От этого считаются бюджет, прогноз и напоминания.','Business revenue goes into income and taxes plus the accountant go into spending; the budget, forecast and reminders use them.','ԱՁ-ի հասույթը մտնում է եկամուտների մեջ, իսկ հարկերն ու հաշվապահը՝ ծախսերի։ Դրանցից են հաշվվում բյուջեն, կանխատեսումը և հիշեցումները։')}</p>
+    ${seg('biz.on',[[true,'✓ '+T('Да, я ИП','Yes, I’m an entrepreneur','Այո, ես ԱՁ եմ')],[false,T('Нет','No','Ոչ')]])}
+    ${b.on?`<div class="grid" style="margin-top:12px">
+      ${sel('biz.regime',T('Налоговый режим','Tax regime','Հարկային ռեժիմ'),BIZ_REG)}
+      ${b.regime==='turnover'?sel('biz.activity',T('Вид деятельности','Activity','Գործունեության տեսակ'),Object.fromEntries(Object.entries(BIZ_ACT).map(([k,v])=>[k,[L(v[0])+(k==='hitech'?' · 1%':' · '+v[1]+'%')]]))):''}
+      ${inp('biz.revenue',T('Выручка в месяц (в среднем)','Revenue per month (average)','Հասույթ ամսական (միջինը)'))}
+      ${sel('biz.cur',T('Валюта выручки','Revenue currency','Հասույթի արժույթ'),{AMD:['֏ AMD'],USD:['$ USD'],EUR:['€ EUR'],RUB:['₽ RUB']})}
+      ${b.regime!=='micro'&&b.activity!=='hitech'?inp('biz.docExp',T('Расходы с документами в месяц','Documented expenses per month','Փաստաթղթավորված ծախսեր ամսական')):''}
+      ${b.regime==='general'?sel('biz.vat',T('Плательщик НДС','VAT payer','ԱԱՀ վճարող'),{false:[T('Нет','No','Ոչ')],true:[T('Да','Yes','Այո')]}):''}
+      ${sel('biz.social',T('Соцплатёж (родились в 1974 и позже)','Social payment (born 1974 or later)','Սոցվճար (ծնված 1974-ից հետո)'),{true:[T('Да, 5 000 ֏ в месяц','Yes, AMD 5,000 a month','Այո, ամսական 5 000 ֏')],false:[T('Нет','No','Ոչ')]})}
+      ${sel('biz.health',T('Медстраховка','Health insurance','Բժշկական ապահովագրություն'),{auto:[T('Авто: если доход за год больше 2,4 млн ֏','Auto: if yearly income is above AMD 2.4M','Ավտո՝ եթե տարեկան եկամուտը 2,4 մլն ֏-ից ավելի է')],on:[T('Да','Yes','Այո')],off:[T('Нет','No','Ոչ')]})}
+      ${inp('biz.accountant',T('Бухгалтер в месяц','Accountant per month','Հաշվապահ ամսական'))}
+      ${inp('biz.accDay',T('День оплаты бухгалтеру','Accountant payment day','Հաշվապահին վճարման օր'))}
+      ${inp('biz.bankFee',T('Банк, касса, обслуживание в месяц','Bank, POS, service per month','Բանկ, դրամարկղ ամսական'))}
+      ${inp('biz.other',T('Прочие расходы ИП в месяц','Other business costs per month','Այլ ծախսեր ամսական'))}
+      ${dateF('biz.from',T('ИП с даты (необяз.)','Entrepreneur since (optional)','ԱՁ սկսած (ըստ ցանկ.)'))}
+    </div>`:''}
+  </div><div id="taxout">${taxOut()}</div>`;
+}
+function bizPayments(n){ // upcoming tax / accountant payments for n months
+  const b=BIZ(),x=bizCalc();if(!x.on)return[];const t=new Date();t.setHours(0,0,0,0);const out=[];
+  for(let k=0;k<n;k++){const d0=new Date(t.getFullYear(),t.getMonth()+k,1),y=d0.getFullYear(),m=d0.getMonth()+1;
+    const at=(day,o)=>{const d=new Date(y,m-1,Math.min(day,dim(y,m-1)));if(d>=t)out.push({d,...o})};
+    if([1,4,7,10].includes(m)&&x.tt>0)at(20,{n:T('Налог с оборота за квартал','Quarterly turnover tax','Եռամսյակային շրջանառության հարկ'),v:x.tt*3,k:'tax'});
+    if([1,4,7,10].includes(m)&&(x.inc+x.vat)>0)at(20,{n:T('Налоги за квартал (подоходный/НДС)','Quarterly taxes (income/VAT)','Եռամսյակային հարկեր'),v:(x.inc+x.vat)*3,k:'tax'});
+    if(x.social+x.profit>0)at(15,{n:T('Соцплатёж и налог на прибыль','Social payment and profit tax','Սոցվճար և շահութահարկ'),v:x.social+x.profit,k:'tax'});
+    if(m===4)at(20,{n:T('Годовая декларация, медстраховка, гербовый сбор','Annual return, health insurance, stamp duty','Տարեկան հաշվետվություն, ապահովագրություն, դրոշմանիշ'),v:(x.health+x.stamp)*12,k:'tax'});
+    if(num(b.accountant)>0)at(num(b.accDay)||10,{n:T('Бухгалтер','Accountant','Հաշվապահ'),v:num(b.accountant),k:'acc'});
+  }
+  return out.sort((a,b)=>a.d-b.d);
+}
+function taxOut(){
+  const x=bizCalc();if(!x.on)return '';const b=BIZ();
+  if(!(x.rev>0))return `<div class="card"><p class="muted">${T('Введите выручку в месяц.','Enter monthly revenue.','Մուտքագրեք ամսական հասույթը։')}</p></div>`;
+  const eff=x.cost/x.rev*100,per100=x.parts.map(p=>({...p,s:p.v/x.rev*100}));
+  const bar=`<div class="stackbar">${per100.map(p=>`<div style="width:${p.s}%;background:${p.c}" title="${esc(p.n)}: ${pct(p.s)}"></div>`).join('')}<div style="width:${Math.max(0,100-eff)}%;background:var(--c2)" title="${T('На руки','Take-home','Ձեռքին')}"></div></div>
+    <div class="legend" style="flex-direction:row;flex-wrap:wrap;gap:10px 16px;margin-top:8px">${per100.map(p=>`<div><i style="background:${p.c}"></i>${esc(p.n)} <b>${(Math.round(p.s*10)/10)}</b></div>`).join('')}<div><i style="background:var(--c2)"></i>${T('На руки','Take-home','Ձեռքին')} <b>${Math.round((100-eff)*10)/10}</b></div></div>`;
+  const pays=bizPayments(12);const byM={};pays.forEach(p=>{const k=ymd(p.d).slice(0,7);byM[k]=(byM[k]||0)+p.v});
+  const months=Array.from({length:12},(_,k)=>{const d=new Date(new Date().getFullYear(),new Date().getMonth()+k,1);return{d,k:ymd(d).slice(0,7)}});
+  const mx=Math.max(1,...months.map(m=>byM[m.k]||0)),W=560,H=200;const bw=(W-50)/12;
+  const chart=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:240px">${months.map((m,i)=>{const v=byM[m.k]||0,h=(H-40)*v/mx,x=50+i*bw;return `<rect x="${x+bw*.15}" y="${H-24-h}" width="${bw*.7}" height="${h}" rx="3" fill="${[0,3,6,9].includes(m.d.getMonth())?'var(--c4)':'var(--c1)'}"><title>${monthShort(m.d)}: ${fmt(v)}</title></rect><text x="${x+bw/2}" y="${H-8}" font-size="11" text-anchor="middle" fill="var(--muted)">${MONTHS()[m.d.getMonth()]}</text>${v?`<text x="${x+bw/2}" y="${H-28-h}" font-size="10" text-anchor="middle" fill="var(--muted)">${k1(v)}</text>`:''}`}).join('')}</svg>`;
+  return `<div class="card"><h2>${T('Сколько уходит на налоги','How much goes to taxes','Որքան է գնում հարկերին')}</h2>
+    <div class="grid">${stat(T('Выручка в месяц','Revenue per month','Հասույթ ամսական'),fmt(x.rev))}${stat(T('Налоги в месяц','Taxes per month','Հարկեր ամսական'),fmt(x.taxes),'bad')}${stat(T('Бухгалтер и обслуживание','Accountant & service','Հաշվապահ և սպասարկում'),fmt(x.service),'bad')}${stat(T('На руки в месяц','Take-home per month','Ձեռքին ամսական'),fmt(x.net),'good')}${stat(T('Нагрузка','Total burden','Ընդհանուր բեռ'),pct(eff),eff>15?'warn':'')}</div>
+    ${x.warn.map(w=>tipH('bad',T('Внимание','Attention','Ուշադրություն'),w)).join('')}
+    <h3 style="margin:16px 0 8px">${T('Из каждых 100 ֏ выручки','Out of every 100 of revenue','Յուրաքանչյուր 100 ֏ հասույթից')}</h3>${bar}
+  </div>
+  <div class="g2"><div class="card"><h2>${T('На что уходят налоги и расходы ИП','Where taxes and costs go','Ուր են գնում հարկերն ու ծախսերը')}</h2>${donut(x.parts)}</div>
+  <div class="card"><h2>${T('Когда платить: 12 месяцев','When to pay: 12 months','Երբ վճարել՝ 12 ամիս')}</h2>${chart}<p class="sub">${T('Красным — месяцы квартальных платежей (до 20 января, апреля, июля, октября).','Red: quarterly payment months (by 20 January, April, July, October).','Կարմիրով՝ եռամսյակային վճարների ամիսները (մինչև հունվարի, ապրիլի, հուլիսի, հոկտեմբերի 20-ը)։')}</p></div></div>
+  <div class="card"><h2>${T('Ближайшие платежи ИП','Upcoming business payments','Մոտակա վճարումներ')}</h2><div class="scroll"><table>${pays.slice(0,10).map(p=>`<tr><td style="white-space:nowrap"><b>${fdate(ymd(p.d))}</b></td><td>${p.k==='acc'?'👩‍💼':'🧾'} ${esc(p.n)}</td><td class="n"><b>${fmt(p.v)}</b></td></tr>`).join('')}</table></div>
+  <div class="grid" style="margin-top:12px">${stat(T('Налоги за год','Taxes per year','Հարկեր տարեկան'),fmt(x.taxes*12),'bad')}${stat(T('Бухгалтер и прочее за год','Accountant etc. per year','Հաշվապահ և այլն տարեկան'),fmt(x.service*12),'bad')}${stat(T('На руки за год','Take-home per year','Ձեռքին տարեկան'),fmt(x.net*12),'good')}</div>
+  <p class="sub" style="margin-top:10px">${T('Ставки 2026 года: налог с оборота 10% (торговля и услуги), 7% производство, 12% общепит, 1% для IT из правительственного списка; с расходами с документами — не ниже 1–4,5%. С июля 2025 юридические, бухгалтерские и консалтинговые услуги не могут быть на налоге с оборота. Это ориентир — точные суммы и сроки уточняйте у бухгалтера.','2026 rates: turnover tax 10% (trade and services), 7% manufacturing, 12% catering, 1% for listed high-tech; with documented expenses not below 1–4.5%. Since July 2025 legal, accounting and consulting services can’t use turnover tax. This is an estimate: check exact amounts and dates with your accountant.','2026 թ. դրույքներ. շրջանառության հարկ 10% (առևտուր և ծառայություններ), 7% արտադրություն, 12% հանրային սնունդ, 1% ցանկում ներառված IT-ի համար։ Սա գնահատական է, ճշտեք հաշվապահի հետ։')}</p></div>`;
+}
+
+/* ================== OVERVIEW: filters + "where the money goes" ================== */
+const HF_KEYS=[['inc','💰',['Доходы','Income','Եկամուտներ']],['exp','🛒',['Расходы','Spending','Ծախսեր']],['loans','🏦',['Кредиты','Loans','Վարկեր']],['prepay','⚡',['Досрочные / авансы','Prepayments','Վաղաժամկետ մարումներ']],['tax','🧾',['Налоги ИП','Business taxes','ԱՁ հարկեր']],['plans','🔁',['Регулярные и цели','Recurring & goals','Պարբերական']],['ops','📝',['Разовые операции','One-off transactions','Միանվագ գործարքներ']]];
+function HF(){if(!S.homeF)S.homeF={};HF_KEYS.forEach(([k])=>{if(S.homeF[k]===undefined)S.homeF[k]=true});return S.homeF}
+const isPrepayOp=o=>o.type==='out'&&(o.cat==='prepay'||o.cat==='loan');
+function hfChips(){const F=HF();return `<div class="hfchips"><span class="muted">${T('Показывать:','Show:','Ցույց տալ՝')}</span>${HF_KEYS.map(([k,i,n])=>`<button class="chip${F[k]?' on':''}" data-hf="${k}">${i} ${L(n)}</button>`).join('')}</div>`}
+function flowParts(ym){ // breakdown of a month by kind
+  const c=calc(),mid=new Date(ym+'-15T00:00:00'),bz=bizCalc(ym);
+  const sal=(S.profile.married?num(S.profile.partnerIncome):0)+S.incomes.reduce((a,x)=>a+(incFreq(x)==='monthly'&&activeIn(x,ym)?num(x.amount):0),0);
+  const irr=S.incomes.reduce((a,x)=>a+(incFreq(x)!=='monthly'?incomeInMonth(x,mid):0),0);
+  const loans=S.loans.reduce((a,l)=>a+(isTemp(l)?[...loanPlan(l),...(l.paidLog||[])].filter(x=>x.date.slice(0,7)===ym).reduce((s,x)=>s+num(x.amount),0):((l.paidLog||[]).some(x=>x.date.slice(0,7)===ym)?(l.paidLog||[]).filter(x=>x.date.slice(0,7)===ym).reduce((s,x)=>s+x.amount,0):activeIn(l,ym)&&num(l.balance)>0?num(l.payment):0)),0);
+  const om=(S.ops||[]).filter(o=>(o.date||'').slice(0,7)===ym);
+  return{sal,biz:bz.rev,irr,opsIn:om.filter(o=>o.type==='in').reduce((a,o)=>a+o.amount,0),
+    exp:c.housing+c.util+c.kids+c.car+expAt(ym),loans,tax:bz.cost,plans:PLANS().filter(p=>p.kind!=='save').reduce((a,p)=>a+planOccIn(p,ym),0),
+    prepay:om.filter(isPrepayOp).reduce((a,o)=>a+o.amount,0),opsOut:om.filter(o=>o.type==='out'&&!isPrepayOp(o)).reduce((a,o)=>a+o.amount,0)};
+}
+function sumParts(p){const F=HF();return{inc:F.inc?p.sal+p.biz+p.irr+(F.ops?p.opsIn:0):(F.tax?p.biz:0),out:(F.exp?p.exp:0)+(F.loans?p.loans:0)+(F.tax?p.tax:0)+(F.plans?p.plans:0)+(F.prepay?p.prepay:0)+(F.ops?p.opsOut:0)}}
+function loanSplitNow(){ // interest vs principal in this month's loan payments
+  let I=0;S.loans.forEach(l=>{const b=num(l.balance);if(b<=0)return;const r=num(l.rate)/1200;if(!isTemp(l))I+=b*r;else if(loanMode(l)==='plan')I+=b*r});
+  const c=calc();return{interest:Math.min(I,c.loans),principal:Math.max(0,c.loans-I)};
+}
+function flowChart(srcs,sinks){
+  srcs=srcs.filter(x=>x.v>0.5);sinks=sinks.filter(x=>x.v>0.5);const tot=Math.max(srcs.reduce((a,x)=>a+x.v,0),sinks.reduce((a,x)=>a+x.v,0));if(tot<=0)return `<p class="muted">${T('Нет данных','No data','Տվյալներ չկան')}</p>`;
+  const W=760,gap=6,H=Math.max(280,Math.max(srcs.length,sinks.length)*44),x1=190,x2=W-230,nw=14;
+  const lay=(arr)=>{const minH=30,avail=H-gap*(arr.length-1);let small=arr.filter(x=>x.v/tot*avail<minH);const big=arr.filter(x=>!small.includes(x)),bigSum=big.reduce((a,x)=>a+x.v,0);const sc=bigSum>0?Math.max(0,avail-minH*small.length)/bigSum:0;let y=0;return arr.map(x=>{const h=small.includes(x)?minH:Math.max(minH,x.v*sc),o={...x,y,h};y+=h+gap;return o})};
+  const L1=lay(srcs),L2=lay(sinks);
+  // bands: walk both stacks by value
+  const bands=[];let i=0,j=0,ri=L1[0]?.v||0,rj=L2[0]?.v||0,yi=L1[0]?.y||0,yj=L2[0]?.y||0;const sc1=L1.length?L1[0].h/L1[0].v:1,sc2=L2.length?L2[0].h/L2[0].v:1;
+  while(i<L1.length&&j<L2.length){const v=Math.min(ri,rj);const h1=v*(L1[i].h/L1[i].v),h2=v*(L2[j].h/L2[j].v);
+    bands.push(`<path d="M${x1+nw},${yi} C${(x1+x2)/2},${yi} ${(x1+x2)/2},${yj} ${x2},${yj} L${x2},${yj+h2} C${(x1+x2)/2},${yj+h2} ${(x1+x2)/2},${yi+h1} ${x1+nw},${yi+h1} Z" fill="${L2[j].c}" opacity=".28"><title>${esc(L1[i].n)} → ${esc(L2[j].n)}: ${fmt(v)}</title></path>`);
+    ri-=v;rj-=v;yi+=h1;yj+=h2;if(ri<=1e-6){i++;if(L1[i]){ri=L1[i].v;yi=L1[i].y}}if(rj<=1e-6){j++;if(L2[j]){rj=L2[j].v;yj=L2[j].y}}}
+  const node=(o,x,right)=>`<rect x="${x}" y="${o.y}" width="${nw}" height="${o.h}" rx="3" fill="${o.c}"/><text x="${right?x+nw+8:x-8}" y="${o.y+o.h/2-1}" font-size="12.5" font-weight="600" text-anchor="${right?'start':'end'}" fill="var(--ink)">${esc(o.n)}</text><text x="${right?x+nw+8:x-8}" y="${o.y+o.h/2+13}" font-size="11.5" text-anchor="${right?'start':'end'}" fill="var(--muted)">${fmt(o.v)} · ${pct(o.v/tot*100)}</text>`;
+  return `<svg viewBox="-4 -4 ${W+8} ${H+12}" width="100%">${bands.join('')}${L1.map(o=>node(o,x1,false)).join('')}${L2.map(o=>node(o,x2,true)).join('')}</svg>`;
+}
+function homeFlow(){
+  const c=calc(),F=HF(),bz=bizCalc(),sp=loanSplitNow(),cur=ymd(new Date()).slice(0,7),p=flowParts(cur);
+  const srcs=[];
+  if(F.inc){S.incomes.filter(x=>incFreq(x)==='monthly'&&activeNow(x)&&num(x.amount)>0).forEach(x=>srcs.push({n:x.name||T('Доход','Income','Եկամուտ'),v:num(x.amount),c:'var(--c2)'}));
+    if(S.profile.married&&num(S.profile.partnerIncome)>0)srcs.push({n:T('Супруг(а)','Partner','Ամուսին'),v:num(S.profile.partnerIncome),c:'var(--c2)'});
+    if(c.irregAvg>0)srcs.push({n:T('Нерегулярные (в среднем)','Irregular (average)','Անկանոն (միջինը)'),v:c.irregAvg,c:'var(--c5)'});}
+  if((F.inc||F.tax)&&bz.on&&bz.rev>0)srcs.push({n:T('Выручка ИП','Business revenue','ԱՁ հասույթ'),v:bz.rev,c:'var(--c1)'});
+  if(F.ops&&F.inc&&p.opsIn>0)srcs.push({n:T('Разовые поступления','One-off income','Միանվագ մուտքեր'),v:p.opsIn,c:'var(--c6)'});
+  const sinks=[];const add=(on,n,v,col)=>{if(on&&v>0)sinks.push({n,v,c:col})};
+  add(F.exp,T('Жильё','Housing','Բնակարան'),c.housing,'var(--c1)');add(F.exp,T('Коммунальные','Utilities','Կոմունալ'),c.util,'var(--c5)');add(F.exp,T('Дети и учёба','Kids & education','Երեխաներ'),c.kids,'var(--c6)');add(F.exp,T('Машина','Car','Մեքենա'),c.car,'var(--c3)');
+  add(F.exp,T('Обязательные траты','Essentials','Պարտադիր ծախսեր'),c.need,'var(--c2)');add(F.exp,T('Желания','Wants','Ցանկություններ'),c.want,'var(--c7)');
+  add(F.loans,T('Проценты банкам','Interest to banks','Տոկոսներ բանկերին'),sp.interest,'var(--c4)');add(F.loans,T('Погашение долга','Debt principal','Պարտքի մարում'),sp.principal,'var(--c3)');
+  add(F.tax,T('Налоги ИП','Business taxes','ԱՁ հարկեր'),bz.taxes,'var(--c4)');add(F.tax,T('Бухгалтер и обслуживание','Accountant & service','Հաշվապահ'),bz.service,'var(--c8)');
+  add(F.plans,T('Регулярные платежи','Recurring payments','Պարբերական վճարներ'),c.planPay,'var(--c8)');add(F.plans,T('Накопления по плану','Planned savings','Պլանային խնայողություն'),c.planSave,'var(--c2)');
+  add(F.prepay,T('Досрочные погашения','Prepayments','Վաղաժամկետ մարումներ'),p.prepay,'var(--c3)');add(F.ops,T('Разовые траты','One-off spending','Միանվագ ծախսեր'),p.opsOut,'var(--c7)');
+  const si=srcs.reduce((a,x)=>a+x.v,0),so=sinks.reduce((a,x)=>a+x.v,0);
+  if(si>so+0.5)sinks.push({n:T('Остаётся свободно','Left over','Մնում է ազատ'),v:si-so,c:'var(--c2)'});
+  if(so>si+0.5&&F.inc)srcs.push({n:T('Не хватает (из накоплений)','Shortfall (from savings)','Պակասորդ (խնայողություններից)'),v:so-si,c:'var(--c4)'});
+  return flowChart(srcs,sinks);
+}
+function homeTop(){
+  const c=calc(),F=HF(),bz=bizCalc(),items=[];
+  if(F.exp){[[T('Жильё','Housing','Բնակարան'),c.housing,'🏠'],[T('Коммунальные','Utilities','Կոմունալ'),c.util,'💡'],[T('Дети и учёба','Kids & education','Երեխաներ'),c.kids,'👶'],[T('Машина','Car','Մեքենա'),c.car,'🚗']].forEach(([n,v,i])=>items.push({n,v,i}));
+    S.expenses.filter(e=>activeNow(e)).forEach(e=>items.push({n:e.name||L(CATS[e.cat]?.[0]||''),v:num(e.amount),i:'🛒'}))}
+  if(F.loans){S.loans.forEach(l=>{if(num(l.balance)<=0)return;const v=isTemp(l)?loanPlan(l).filter(x=>x.date.slice(0,7)===ymd(new Date()).slice(0,7)).reduce((a,x)=>a+x.amount,0):num(l.payment);items.push({n:l.name||'',v,i:'🏦'})})}
+  if(F.tax&&bz.on)bz.parts.forEach(p=>items.push({n:p.n,v:p.v,i:p.tax?'🧾':'👩‍💼'}));
+  if(F.plans)PLANS().filter(p=>activeNow(p)&&num(p.amount)>0).forEach(p=>items.push({n:p.name||'',v:planMonthly(p),i:p.kind==='save'?'🎯':'🔁'}));
+  const top=items.filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,10);if(!top.length)return `<p class="muted">${T('Нет данных','No data','Տվյալներ չկան')}</p>`;
+  const mx=top[0].v,tot=c.income+c.irregAvg;
+  return top.map(x=>`<div class="drow"><div class="dname">${x.i} ${esc(x.n)}</div><div class="bar"><div style="width:${x.v/mx*100}%;background:var(--c1)"></div></div><div class="n">${fmt(x.v)}${tot>0?`<span class="muted" style="font-weight:400"> · ${pct(x.v/tot*100)}</span>`:''}</div></div>`).join('');
+}
+function homeInterest(){
+  if(!S.loans.some(l=>num(l.balance)>0))return '';
+  const fc=fcSim(FC().events,12),rows=fc.rows.slice(1),W=560,H=220,mx=Math.max(1,...rows.map(r=>r.payments)),bw=(W-50)/rows.length;
+  const totI=rows.reduce((a,r)=>a+r.interest,0),totP=rows.reduce((a,r)=>a+Math.max(0,r.payments-r.interest),0);
+  return `<div class="card"><h2>${T('Куда идут платежи по кредитам: 12 месяцев','Where loan payments go: 12 months','Ուր են գնում վարկային վճարները՝ 12 ամիս')}</h2>
+  <div class="grid" style="margin-bottom:8px">${stat(T('Проценты банкам за год','Interest to banks in a year','Տոկոսներ բանկերին տարում'),fmt(totI),'bad')}${stat(T('Уменьшение долга за год','Debt reduction in a year','Պարտքի նվազում տարում'),fmt(totP),'good')}${stat(T('Доля процентов','Interest share','Տոկոսների բաժին'),pct(totI/Math.max(1,totI+totP)*100),'warn')}</div>
+  <svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:260px">${rows.map((r,i)=>{const x=50+i*bw,hi=(H-40)*r.interest/mx,hp=(H-40)*Math.max(0,r.payments-r.interest)/mx;return `<rect x="${x+bw*.15}" y="${H-24-hi-hp}" width="${bw*.7}" height="${hp}" fill="var(--c3)"><title>${fcLabel(r.m)}: ${T('долг','principal','պարտք')} ${fmt(r.payments-r.interest)}</title></rect><rect x="${x+bw*.15}" y="${H-24-hi}" width="${bw*.7}" height="${hi}" fill="var(--c4)"><title>${fcLabel(r.m)}: ${T('проценты','interest','տոկոսներ')} ${fmt(r.interest)}</title></rect><text x="${x+bw/2}" y="${H-8}" font-size="11" text-anchor="middle" fill="var(--muted)">${MONTHS()[fcMonth(r.m).getMonth()]}</text>`}).join('')}<text x="44" y="16" font-size="11" text-anchor="end" fill="var(--muted)">${k1(mx)}</text></svg>
+  <div class="legend" style="flex-direction:row;gap:14px;margin-top:6px"><div><i style="background:var(--c4)"></i>${T('Проценты','Interest','Տոկոսներ')}</div><div><i style="background:var(--c3)"></i>${T('Основной долг','Principal','Մայր գումար')}</div></div></div>`;
+}
+function homeMore(){
+  return `<div class="card"><h2>${T('Куда уходят деньги за месяц','Where the money goes each month','Ուր է գնում գումարը ամսական')}</h2><p class="sub">${T('Слева — откуда приходят деньги, справа — куда уходят. Наведите на полосу, чтобы увидеть сумму.','Left: where money comes from; right: where it goes. Hover a band to see the amount.','Ձախում՝ որտեղից է գալիս գումարը, աջում՝ ուր է գնում։')}</p>${homeFlow()}</div>
+  <div class="card"><h2>${T('10 самых больших трат в месяц','Top 10 monthly costs','Ամենամեծ 10 ամսական ծախսերը')}</h2>${homeTop()}</div>
+  ${HF().loans?homeInterest():''}`;
+}
+
 /* ================== CHROME ================== */
 function renderChrome(){
   document.documentElement.lang=LANG;
@@ -546,6 +719,7 @@ function vMoney(){
   <div class="card"><h2>${T('Доходы в месяц','Monthly income','Ամսական եկամուտներ')}</h2><p class="sub">${T('Зарплата, подработка, аренда, пособия. Доход супруга(и) указывается во вкладке «Семья».','Salary, side jobs, rental income, benefits. Spouse’s income goes in the Family tab.','Աշխատավարձ, լրացուցիչ աշխատանք, վարձակալություն, նպաստներ։ Զուգընկերոջ եկամուտը նշվում է «Ընտանիք» բաժնում։')}</p>
     ${S.incomes.map((x,i)=>{const f=incFreq(x);return `<div class="row r-inc r-loan2${activeNow(x)||f==='once'?'':' off'}">${inp(`incomes.${i}.name`,T('Источник','Source','Աղբյուր'),'str','dl-income')}${inp(`incomes.${i}.amount`,f==='monthly'?T('Сумма в месяц','Amount per month','Գումար ամսական'):T('Сумма за раз','Amount each time','Գումար ամեն անգամ'))}${sel(`incomes.${i}.freq`,T('Как часто','How often','Որքան հաճախ'),INC_FREQ)}${f==='quarterly'?sel(`incomes.${i}.month`,T('Месяцы','Months','Ամիսներ'),{1:[[1,4,7,10].map(m=>MONTHS()[m-1]).join(', ')],2:[[2,5,8,11].map(m=>MONTHS()[m-1]).join(', ')],3:[[3,6,9,12].map(m=>MONTHS()[m-1]).join(', ')]})+inp(`incomes.${i}.day`,T('Примерно какого числа','Around which day','Մոտավորապես որ օրը')):f==='yearly'?sel(`incomes.${i}.month`,T('Месяц','Month','Ամիս'),Object.fromEntries(MONTHSF().map((m,k)=>[k+1,[m]])))+inp(`incomes.${i}.day`,T('Число','Day','Օր')):f==='once'?`<label class="f">${T('Дата','Date','Ամսաթիվ')}<input type="date" data-k="incomes.${i}.date" data-t="str" value="${esc(x.date||'')}"></label>`:''}${f!=='monthly'&&num(x.amount)>0&&f!=='once'?`<div class="muted" style="font-size:12px;align-self:end">≈ ${fmt(incAvg(x))} / ${MO()}</div>`:''}${f!=='once'?periodF(`incomes.${i}`):''}<button class="x" data-del="incomes.${i}">✕</button></div>`}).join('')}
     ${qchips('income')}<div class="btns"><button class="btn ghost" data-add="income">+ ${T('Доход','Income','Եկամուտ')}</button></div>
+    ${bizCalc().on?`<p class="sub">🧾 ${T('Выручка ИП','Business revenue','ԱՁ հասույթ')} +${fmt(bizCalc().rev)} · ${T('настраивается в разделе «Налоги и ИП»','set up in “Taxes & business”','կարգավորվում է «Հարկեր և ԱՁ» բաժնում')}</p>`:''}
     <div class="tot"><span>${T('Итого с семьёй в месяц','Household total per month','Ընդամենը ընտանիքով ամսական')}</span><span id="t-inc">${fmt(c.income)}</span></div>${c.irregList.length?`<div class="tot" style="border:0;margin:0;font-weight:500"><span class="muted">${T('+ периодические доходы, в среднем','+ periodic income, on average','+ պարբերական եկամուտներ, միջինում')}</span><span class="good">+${fmt(c.irregAvg)} / ${MO()}</span></div>`:''}
   </div>
   <div class="card"><h2>${T('Ежедневные расходы в месяц','Everyday monthly spending','Ամենօրյա ամսական ծախսեր')}</h2><p class="sub">${T('Сюда не входят жильё, коммуналка, дети, машина и кредиты: они уже заданы в других вкладках.','Housing, utilities, kids, car and loans are entered in the other tabs, so leave them out here.','Բնակարանը, կոմունալը, երեխաները, մեքենան և վարկերն այստեղ չեն մտնում. դրանք լրացվում են այլ բաժիններում։')}</p>
@@ -556,7 +730,7 @@ function vMoney(){
 }
 function sumTable(){
   const c=calc();
-  const rows=[['🏠 '+T('Жильё','Housing','Բնակարան'),c.housing],['💡 '+T('Коммунальные','Utilities','Կոմունալ'),c.util],['👶 '+T('Дети и учёба','Kids & education','Երեխաներ և ուսում'),c.kids],['🚗 '+T('Машина','Car','Մեքենա'),c.car],['🛒 '+T('Обязательные','Essentials','Պարտադիր'),c.need],['🎉 '+T('Желания','Wants','Ցանկություններ'),c.want],['🏦 '+T('Кредиты, ежемесячно','Loans, monthly','Վարկեր, ամսական'),c.loansM]].concat(c.loansT?[['⏱ '+T('Погашения по графику в этом месяце','Scheduled repayments this month','Այս ամսվա վճարումներ ըստ գրաֆիկի'),c.loansT]]:[]).concat(c.planPay?[['🔁 '+T('Регулярные платежи','Recurring payments','Պարբերական վճարներ'),c.planPay]]:[]);
+  const rows=[['🏠 '+T('Жильё','Housing','Բնակարան'),c.housing],['💡 '+T('Коммунальные','Utilities','Կոմունալ'),c.util],['👶 '+T('Дети и учёба','Kids & education','Երեխաներ և ուսում'),c.kids],['🚗 '+T('Машина','Car','Մեքենա'),c.car],['🛒 '+T('Обязательные','Essentials','Պարտադիր'),c.need],['🎉 '+T('Желания','Wants','Ցանկություններ'),c.want],['🏦 '+T('Кредиты, ежемесячно','Loans, monthly','Վարկեր, ամսական'),c.loansM]].concat(c.loansT?[['⏱ '+T('Погашения по графику в этом месяце','Scheduled repayments this month','Այս ամսվա վճարումներ ըստ գրաֆիկի'),c.loansT]]:[]).concat(c.bizCost?[['🧾 '+T('Налоги ИП','Business taxes','ԱՁ հարկեր'),c.bizTax],['👩‍💼 '+T('Бухгалтер и обслуживание ИП','Accountant & business service','Հաշվապահ և սպասարկում'),c.bizService]].filter(r=>r[1]>0):[]).concat(c.planPay?[['🔁 '+T('Регулярные платежи','Recurring payments','Պարբերական վճարներ'),c.planPay]]:[]);
   return `<table>${rows.map(r=>`<tr><td>${r[0]}</td><td class="n">${fmt(r[1])}</td><td class="n muted">${c.income?pct(r[1]/c.income*100):''}</td></tr>`).join('')}
   <tr><th>${T('Всего','Total','Ընդամենը')}</th><th class="n">${fmt(c.spend)}</th><th class="n">${c.income?pct(c.spend/c.income*100):''}</th></tr></table>`;
 }
@@ -767,7 +941,7 @@ function insights(c){
 function yearInterest(){let I=0;S.loans.forEach(l=>{let b=num(l.balance);const r=num(l.rate)/1200,P=num(l.payment);for(let k=0;k<12&&b>0.01;k++){const i=b*r;I+=i;b=b+i-Math.min(P,b+i)}});return I}
 function vAnalytics(){
   const c=calc();
-  const items=[{n:T('Жильё','Housing','Բնակարան'),v:c.housing,c:'var(--c1)'},{n:T('Коммунальные','Utilities','Կոմունալ'),v:c.util,c:'var(--c5)'},{n:T('Дети и учёба','Kids & education','Երեխաներ և ուսում'),v:c.kids,c:'var(--c6)'},{n:T('Машина','Car','Մեքենա'),v:c.car,c:'var(--c3)'},{n:T('Обязательные','Essentials','Պարտադիր'),v:c.need,c:'var(--c2)'},{n:T('Желания','Wants','Ցանկություններ'),v:c.want,c:'var(--c7)'},{n:T('Кредиты','Loans','Վարկեր'),v:c.loans,c:'var(--c4)'},{n:T('Регулярные платежи','Recurring payments','Պարբերական վճարներ'),v:c.planPay,c:'var(--c8)'}].filter(x=>x.v>0);
+  const items=[{n:T('Жильё','Housing','Բնակարան'),v:c.housing,c:'var(--c1)'},{n:T('Коммунальные','Utilities','Կոմունալ'),v:c.util,c:'var(--c5)'},{n:T('Дети и учёба','Kids & education','Երեխաներ և ուսում'),v:c.kids,c:'var(--c6)'},{n:T('Машина','Car','Մեքենա'),v:c.car,c:'var(--c3)'},{n:T('Обязательные','Essentials','Պարտադիր'),v:c.need,c:'var(--c2)'},{n:T('Желания','Wants','Ցանկություններ'),v:c.want,c:'var(--c7)'},{n:T('Кредиты','Loans','Վարկեր'),v:c.loans,c:'var(--c4)'},{n:T('Регулярные платежи','Recurring payments','Պարբերական վճարներ'),v:c.planPay,c:'var(--c8)'},{n:T('Налоги и бухгалтер ИП','Business taxes & accountant','ԱՁ հարկեր և հաշվապահ'),v:c.bizCost,c:'var(--c3)'}].filter(x=>x.v>0);
   const scCol=c.score>=70?'var(--good)':c.score>=45?'var(--warn)':'var(--bad)';const R=42,C=2*Math.PI*R;
   const wantPct=c.income?c.want/c.income*100:0,savePct=c.income?Math.max(0,c.fcf)/c.income*100:0,needPct=c.income?(c.needs+c.loans)/c.income*100:0;
   const sim=simulate(S.loans,{rollover:false});const debt12=sim.curve[Math.min(12,sim.curve.length-1)]||0;
@@ -1361,9 +1535,13 @@ function allReminders(){ // user reminders + automatic loan payments
   const lp=S.loanPaid||{},auto=[];
   S.loans.forEach((l,i)=>{if(num(l.balance)<=0)return;const title=(l.name||LTYPE[l.type]?.[LI()]||'')+(l.bank?' · '+l.bank:'');
     if(isTemp(l))loanPlan(l).forEach((x,k)=>auto.push({id:'loan'+i+'_'+k,auto:true,title,cat:'loan',amount:x.amount,freq:'once',date:x.date,daysBefore:3,lastPaid:lp[i+'_'+k]}));
-    else if(num(l.payment)>0)auto.push({id:'loan'+i,auto:true,title,cat:'loan',amount:num(l.payment),freq:'monthly',day:num(l.day)||1,daysBefore:3,lastPaid:lp[i]})});
+    else if(num(l.payment)>0)auto.push({id:'loan'+i,auto:true,title,cat:'loan',amount:num(l.payment),freq:'monthly',day:num(l.day)||1,daysBefore:3,lastPaid:[lp[i],l.asOf].filter(Boolean).sort().pop()})});
   const ip=S.incPaid||{};S.incomes.forEach((x,i)=>{const f=incFreq(x);if(f==='monthly'||!(num(x.amount)>0))return;auto.push({id:'inc'+i,auto:true,title:x.name||'',cat:'income',amount:num(x.amount),freq:f,day:num(x.day)||15,month:num(x.month)||1,date:x.date,daysBefore:3,lastPaid:ip[i]})});
   const pp=S.planPaid||{};PLANS().forEach((p,i)=>{if(!(num(p.amount)>0)||!p.from)return;const f0=new Date(p.from+'T00:00:00');auto.push({id:'plan'+i,auto:true,title:p.name||'',cat:p.kind==='save'?'save':'plan',amount:num(p.amount),freq:p.freq||'monthly',day:f0.getDate(),month:f0.getMonth()+1,since:p.from,until:p.to||'',daysBefore:2,lastPaid:pp[i]})});
+  {const x=bizCalc(),bp=S.bizPaid||{};if(x.on){if(x.tt+x.inc+x.vat>0)auto.push({id:'biztax',auto:true,title:T('Налоги ИП за квартал','Quarterly business taxes','Եռամսյակային ԱՁ հարկեր'),cat:'tax',amount:Math.round((x.tt+x.inc+x.vat)*3),freq:'quarterly',day:20,month:1,daysBefore:5,lastPaid:bp.tax});
+    if(x.social+x.profit>0)auto.push({id:'bizsoc',auto:true,title:T('ИП: соцплатёж и налог на прибыль','Business: social payment and profit tax','ԱՁ՝ սոցվճար և շահութահարկ'),cat:'tax',amount:Math.round(x.social+x.profit),freq:'monthly',day:15,daysBefore:3,lastPaid:bp.soc});
+    auto.push({id:'bizyear',auto:true,title:T('ИП: годовая декларация, медстраховка, гербовый сбор','Business: annual return, health insurance, stamp duty','ԱՁ՝ տարեկան հաշվետվություն, ապահովագրություն'),cat:'tax',amount:Math.round((x.health+x.stamp)*12),freq:'yearly',day:20,month:4,daysBefore:14,lastPaid:bp.year});
+    if(num(BIZ().accountant)>0)auto.push({id:'bizacc',auto:true,title:T('Бухгалтер','Accountant','Հաշվապահ'),cat:'tax',amount:num(BIZ().accountant),freq:'monthly',day:num(BIZ().accDay)||10,daysBefore:2,lastPaid:bp.acc})}}
   return [...auto,...remList()];
 }
 function upcoming(days=60){
@@ -1409,6 +1587,7 @@ function remOut(){
 }
 function markPaid(key,d){
   if(key.startsWith('loan')){S.loanPaid=S.loanPaid||{};S.loanPaid[key.slice(4)]=d}
+  else if(key.startsWith('biz')){S.bizPaid=S.bizPaid||{};S.bizPaid[key.slice(3)]=d}
   else if(key.startsWith('plan')){S.planPaid=S.planPaid||{};S.planPaid[key.slice(4)]=d}
   else if(key.startsWith('inc')){S.incPaid=S.incPaid||{};S.incPaid[key.slice(3)]=d}
   else{const r=remList()[+key.slice(1)];if(r)r.lastPaid=d}
@@ -1599,7 +1778,7 @@ function fcOut(){
 function addEvent(i){const q=EV_QUICK[i];const ev={month:q[0]==='payoff'?6:3,type:q[0],amount:0,acc:-1,loan:0,mode:'term',rate:q[0]==='newLoan'?14:0,months:36,use:'spend',note:L(q.slice(2,5)),target:S.loans.length?'loan:0':(S.accounts.length?'acc:0':'')};FC().events.push(ev);return `scen.events.${FC().events.length-1}.amount`}
 
 /* ================== OPERATIONS (разовые доходы и расходы) ================== */
-const OP_OUT={car:['🚗','Машина: ремонт, бензин','Car: repair, fuel','Մեքենա. վերանորոգում, վառելիք'],food:['🛒','Продукты','Groceries','Մթերք'],home:['🏠','Дом: ремонт, техника','Home: repair, appliances','Տուն. վերանորոգում, տեխնիկա'],health:['💊','Здоровье','Health','Առողջություն'],clothes:['👕','Одежда','Clothing','Հագուստ'],transport:['🚕','Транспорт','Transport','Տրանսպորտ'],fun:['🍽','Кафе, развлечения','Cafes, fun','Սրճարան, զվարճանք'],kids:['👶','Дети','Kids','Երեխաներ'],gifts:['🎁','Подарки','Gifts','Նվերներ'],travel:['✈️','Путешествия','Travel','Ճամփորդություն'],utility:['💡','Коммунальные','Utilities','Կոմունալ'],loan:['🏦','Платёж по кредиту','Loan payment','Վարկի վճար'],other:['📌','Другое','Other','Այլ']};
+const OP_OUT={car:['🚗','Машина: ремонт, бензин','Car: repair, fuel','Մեքենա. վերանորոգում, վառելիք'],food:['🛒','Продукты','Groceries','Մթերք'],home:['🏠','Дом: ремонт, техника','Home: repair, appliances','Տուն. վերանորոգում, տեխնիկա'],health:['💊','Здоровье','Health','Առողջություն'],clothes:['👕','Одежда','Clothing','Հագուստ'],transport:['🚕','Транспорт','Transport','Տրանսպորտ'],fun:['🍽','Кафе, развлечения','Cafes, fun','Սրճարան, զվարճանք'],kids:['👶','Дети','Kids','Երեխաներ'],gifts:['🎁','Подарки','Gifts','Նվերներ'],travel:['✈️','Путешествия','Travel','Ճամփորդություն'],utility:['💡','Коммунальные','Utilities','Կոմունալ'],loan:['🏦','Платёж по кредиту','Loan payment','Վարկի վճար'],prepay:['⚡','Досрочное погашение / аванс','Loan prepayment','Վարկի վաղաժամկետ մարում'],tax:['🧾','Налоги, бухгалтер','Taxes, accountant','Հարկեր, հաշվապահ'],other:['📌','Другое','Other','Այլ']};
 const OP_IN={gift:['🎁','Подарок','Gift','Նվեր'],bonus:['💰','Премия','Bonus','Պարգևավճար'],salary:['💼','Зарплата','Salary','Աշխատավարձ'],side:['🧑‍💻','Подработка','Side job','Լրացուցիչ աշխատանք'],sale:['💵','Продажа','Sale','Վաճառք'],refund:['↩️','Возврат долга / денег','Repayment / refund','Պարտքի / գումարի վերադարձ'],interest:['🏦','Проценты, кэшбэк','Interest, cashback','Տոկոս, քեշբեք'],other:['📌','Другое','Other','Այլ']};
 const OP_QUICK=[['out','car','🔧','Ремонт авто','Car repair','Մեքենայի վերանորոգում'],['out','car','⛽','Бензин','Fuel','Բենզին'],['out','food','🛒','Продукты','Groceries','Մթերք'],['out','health','💊','Аптека','Pharmacy','Դեղատուն'],['out','fun','🍽','Ресторан','Restaurant','Ռեստորան'],['out','transport','🚕','Такси','Taxi','Տաքսի'],['out','clothes','👕','Одежда','Clothing','Հագուստ'],['out','home','📱','Техника','Electronics','Տեխնիկա'],['out','home','🛠','Ремонт дома','Home repair','Տան վերանորոգում'],['out','gifts','🎁','Подарок кому-то','Gift for someone','Նվեր ինչ-որ մեկին'],['out','other','🤝','Дал в долг','Lent money','Պարտք տվեցի'],
   ['in','gift','🎁','Подарили деньги','Money gift','Գումար նվիրեցին'],['in','bonus','💰','Премия','Bonus','Պարգևավճար'],['in','side','🧑‍💻','Подработка','Side job','Լրացուցիչ աշխատանք'],['in','sale','💵','Продал вещь','Sold an item','Վաճառեցի իր'],['in','refund','↩️','Вернули долг','Debt repaid to me','Պարտքը վերադարձրին']];
@@ -1624,6 +1803,7 @@ function vOps(){
       ${inp('opDraft.amount',T('Сумма','Amount','Գումար'))}
       ${sel('opDraft.cur',T('Валюта','Currency','Արժույթ'),{AMD:['֏ AMD'],USD:['$ USD'],EUR:['€ EUR'],RUB:['₽ RUB']})}
       ${sel('opDraft.cat',T('Категория','Category','Կատեգորիա'),Object.fromEntries(Object.entries(cats).map(([k,v])=>[k,[v[0]+' '+L(v.slice(1,4))]])))}
+      ${d.type==='out'&&(d.cat==='prepay'||d.cat==='loan')&&S.loans.length?sel('opDraft.loan',T('Какой кредит уменьшить','Which loan to reduce','Որ վարկը նվազեցնել'),{'-1':[T('— не менять остаток —','— don’t change balance —','— չփոխել մնացորդը —')],...Object.fromEntries(S.loans.map((l,i)=>[i,[(l.name||'')+' · '+fmt(num(l.balance))]]))}):''}
       <label class="f">${T('Дата','Date','Ամսաթիվ')}<input type="date" data-k="opDraft.date" data-t="str" value="${esc(d.date)}"></label>
       ${sel('opDraft.acc',d.type==='in'?T('Зачислить на счёт','Credit to account','Մուտքագրել հաշվին'):T('Списать со счёта','Take from account','Գանձել հաշվից'),accOpts)}
       ${inp('opDraft.note',T('Комментарий','Note','Մեկնաբանություն'),'str')}
@@ -1675,6 +1855,7 @@ function opSave(){
   const base=Math.round(toBase(amt,d.cur)*100)/100,acc=num(d.acc);
   const op={id:Date.now(),type:d.type,amount:base,orig:amt,cur:d.cur,rate:fxRate(d.cur)/fxRate(S.currency),cat:d.cat,date:d.date||todayStr(),note:String(d.note||'').slice(0,120),acc:acc>=0&&S.accounts[acc]?acc:-1};
   if(op.acc>=0){const a=S.accounts[op.acc];a.balance=Math.round((num(a.balance)+(op.type==='in'?base:-base))*100)/100}
+  {const li=d.loan===undefined||d.loan===''?-1:num(d.loan);if(op.type==='out'&&(op.cat==='prepay'||op.cat==='loan')&&li>=0&&S.loans[li]){const l=S.loans[li];l.balance=Math.max(0,Math.round((num(l.balance)-base)*100)/100);l.asOf=ymd(new Date());op.loan=li}}
   OPS().push(op);S.opView=monthKey(op.date);
   Object.assign(S.opDraft,{amount:0,note:'',cur:S.currency,date:todayStr()});save();render();
   const mm=$('#opmsg');if(mm)mm.textContent='✓ '+T('Записано','Saved','Գրանցված է')+(op.acc>=0?' · '+T('баланс счёта обновлён','account balance updated','հաշվի մնացորդը թարմացվեց'):'');
@@ -1682,6 +1863,7 @@ function opSave(){
 function opDelete(id){
   const ops=OPS(),i=ops.findIndex(o=>String(o.id)===String(id));if(i<0)return;const o=ops[i];
   if(o.acc>=0&&S.accounts[o.acc]){const a=S.accounts[o.acc];a.balance=Math.round((num(a.balance)-(o.type==='in'?o.amount:-o.amount))*100)/100}
+  if(o.loan>=0&&S.loans[o.loan]){const l=S.loans[o.loan];l.balance=Math.round((num(l.balance)+o.amount)*100)/100}
   ops.splice(i,1);save();render();
 }
 function opQuick(i){const q=OP_QUICK[i];Object.assign(S.opDraft,{type:q[0],cat:q[1],note:L(q.slice(3,6))});return 'opDraft.amount'}
@@ -1773,7 +1955,7 @@ function render(){
   if(out){$('#aibtn').classList.add('hide');
     if(AUTH==='out'){authMode=authMode||'login';openAuth();$('#authmodal').classList.add('gate')}
     return}
-  const v={home:vHome,plans:vPlans,profile:()=>vProfile()+dataCard(),money:vMoney,accounts:vAccounts,loans:vLoans,market:vMarket,analytics:vAnalytics,ops:vOps,forecast:vForecast,advice:vAdvice,calc:vCalc,reminders:vRem}[tab]||vHome;
+  const v={home:vHome,plans:vPlans,taxes:vTaxes,profile:()=>vProfile()+dataCard(),money:vMoney,accounts:vAccounts,loans:vLoans,market:vMarket,analytics:vAnalytics,ops:vOps,forecast:vForecast,advice:vAdvice,calc:vCalc,reminders:vRem}[tab]||vHome;
   $('#view').innerHTML=pageHead(tab)+v()+(tab==='loans'&&S.loans.length?rollNote():'');
   if(tab==='reminders')renderTg();
   live();
@@ -1792,7 +1974,8 @@ function live(){
   if($('#fcout'))$('#fcout').innerHTML=fcOut();
   if($('#remout'))$('#remout').innerHTML=remOut();
   if($('#plansout'))$('#plansout').innerHTML=plansOut();
-  if($('#homeout'))$('#homeout').innerHTML=homeOut()+homePlans();
+  if($('#taxout'))$('#taxout').innerHTML=taxOut();
+  if($('#homeout'))$('#homeout').innerHTML=homeOut()+homeMore()+homePlans();
 }
 
 /* ================== EVENTS ================== */
@@ -1803,7 +1986,7 @@ document.addEventListener('input',e=>{
   {const m=/^plans\.(\d+)\.from$/.exec(k),p=m&&PLANS()[+m[1]];if(p&&num(p.months)>0&&p.from)planDur(+m[1],num(p.months))}
   save();live();
 });
-document.addEventListener('change',e=>{if(e.target.dataset.durin!==undefined){planDur(+e.target.dataset.durin,Math.round(num(e.target.value)));save();render();return}if(e.target.id==='impfile'&&e.target.files[0]){impUpload(e.target.files[0]);return}if(e.target.dataset.imp){IMPopt[e.target.dataset.imp]=e.target.checked;$('#impout').innerHTML=impOut();return}if(e.target.dataset.prefill){prefillPre(e.target.value);save();render();return}if(e.target.tagName==='SELECT'&&e.target.dataset.k){save();if(/^(reminders\.\d+\.freq|calc\.|loans\.\d+\.mode|incomes\.\d+\.freq|plans\.\d+\.(kind|freq)|scen\.events\.\d+\.type|scen\.target)/.test(e.target.dataset.k))render();else live()}});
+document.addEventListener('change',e=>{if(e.target.dataset.durin!==undefined){planDur(+e.target.dataset.durin,Math.round(num(e.target.value)));save();render();return}if(e.target.id==='impfile'&&e.target.files[0]){impUpload(e.target.files[0]);return}if(e.target.dataset.imp){IMPopt[e.target.dataset.imp]=e.target.checked;$('#impout').innerHTML=impOut();return}if(e.target.dataset.prefill){prefillPre(e.target.value);save();render();return}if(e.target.tagName==='SELECT'&&e.target.dataset.k){save();if(/^(reminders\.\d+\.freq|calc\.|loans\.\d+\.mode|incomes\.\d+\.freq|plans\.\d+\.(kind|freq)|biz\.(regime|activity|cur)|opDraft\.cat|opDraft\.type|scen\.events\.\d+\.type|scen\.target)/.test(e.target.dataset.k))render();else live()}});
 $('#cur').addEventListener('change',e=>{S.currency=e.target.value;save();render()});
 $('#lang').addEventListener('change',e=>{LANG=e.target.value;try{localStorage.setItem(KEY+'-lang',LANG)}catch(_){}translateDefaults();save();render()});
 document.addEventListener('click',e=>{
@@ -1813,6 +1996,7 @@ document.addEventListener('click',e=>{
   if(b.dataset.seg){let v=b.dataset.v;v=v==='true'?true:v==='false'?false:v;if(b.dataset.seg==='homeRange'){S.homeFrom='';S.homeTo='';v=v==='all'?'all':+v}setPath(b.dataset.seg,v);save();render();return}
   if(b.dataset.q){const focus=quickAdd(b.dataset.q,+b.dataset.i);save();render();const el=document.querySelector(`[data-k="${focus}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.tg){tgAction(b.dataset.tg);return}
+  if(b.dataset.hf){const F=HF();F[b.dataset.hf]=!F[b.dataset.hf];save();render();return}
   if(b.dataset.dur!==undefined){planDur(+b.dataset.dur,+b.dataset.n);save();render();return}
   if(b.dataset.sched!==undefined){SCHED_OPEN[b.dataset.sched]=!SCHED_OPEN[b.dataset.sched];if($('#plansout'))$('#plansout').innerHTML=plansOut();return}
   if(b.dataset.ev!==undefined){const f=addEvent(+b.dataset.ev);save();render();const el=document.querySelector(`[data-k="${f}"]`);if(el){el.focus();el.select?.()}return}

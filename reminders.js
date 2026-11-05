@@ -42,7 +42,7 @@ function allReminders(data) {
     if (num(l.balance) <= 0) return;
     const title = (l.name || 'Loan') + (l.bank ? ' · ' + l.bank : '');
     if (loanMode(l) !== 'monthly') loanPlan(l).forEach((x, k) => auto.push({ id: 'loan' + i + '_' + k, title, cat: 'loan', amount: x.amount, freq: 'once', date: x.date, daysBefore: 3, lastPaid: lp[i + '_' + k] }));
-    else if (num(l.payment) > 0) auto.push({ id: 'loan' + i, title, cat: 'loan', amount: num(l.payment), freq: 'monthly', day: num(l.day) || 1, daysBefore: 3, lastPaid: lp[i] });
+    else if (num(l.payment) > 0) auto.push({ id: 'loan' + i, title, cat: 'loan', amount: num(l.payment), freq: 'monthly', day: num(l.day) || 1, daysBefore: 3, lastPaid: [lp[i], l.asOf].filter(Boolean).sort().pop() });
   });
   const ip = data.incPaid || {};
   (data.incomes || []).forEach((x, i) => {
@@ -50,6 +50,21 @@ function allReminders(data) {
     if (f === 'monthly' || !(num(x.amount) > 0)) return;
     auto.push({ id: 'inc' + i, title: '💰 ' + (x.name || ''), cat: 'income', amount: num(x.amount), freq: f, day: num(x.day) || 15, month: num(x.month) || 1, date: x.date, daysBefore: 3, lastPaid: ip[i] });
   });
+  // налоги ИП (суммы считаются только если выручка в драмах)
+  const bz = data.biz || {};
+  if (bz.on) {
+    const bp = data.bizPaid || {}, amd = (bz.cur || 'AMD') === 'AMD' && (data.currency || 'AMD') === 'AMD';
+    const rev = amd ? num(bz.revenue) : 0, doc = num(bz.docExp);
+    const ACT = { other: [10, 4.5], trade: [10, 1], manuf: [7, 3], catering: [12, 3.5], hitech: [1, 1] }, A = ACT[bz.activity] || ACT.other;
+    let q = 0;
+    if (bz.regime === 'turnover') q = bz.activity === 'hitech' ? rev * 0.01 : Math.max((rev - doc) * A[0] / 100, rev * A[1] / 100);
+    if (bz.regime === 'general') q = Math.max(0, rev - doc) * 0.2 + (bz.vat ? Math.max(0, rev - doc) * 20 / 120 : 0);
+    if (bz.regime !== 'micro') auto.push({ id: 'biztax', title: '🧾 Налоги ИП за квартал', cat: 'tax', amount: Math.round(q * 3), freq: 'quarterly', day: 20, month: 1, daysBefore: 5, lastPaid: bp.tax });
+    const soc = (bz.social === false || bz.social === 'false' ? 0 : 5000) + (bz.regime === 'turnover' ? 5000 : 0);
+    if (soc) auto.push({ id: 'bizsoc', title: '🧾 ИП: соцплатёж и налог на прибыль', cat: 'tax', amount: soc, freq: 'monthly', day: 15, daysBefore: 3, lastPaid: bp.soc });
+    auto.push({ id: 'bizyear', title: '🧾 ИП: годовая декларация, медстраховка, гербовый сбор', cat: 'tax', amount: 0, freq: 'yearly', day: 20, month: 4, daysBefore: 14, lastPaid: bp.year });
+    if (num(bz.accountant) > 0) auto.push({ id: 'bizacc', title: '👩‍💼 Бухгалтер', cat: 'tax', amount: num(bz.accountant), freq: 'monthly', day: num(bz.accDay) || 10, daysBefore: 2, lastPaid: bp.acc });
+  }
   // регулярные платежи и накопления с датой начала и окончания
   const pp = data.planPaid || {};
   (data.plans || []).forEach((p, i) => {

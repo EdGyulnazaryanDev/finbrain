@@ -196,3 +196,8 @@ nav.side .more{display:none}
 .durs .chip.on,.durs .chip:hover{background:var(--brand);color:#fff;border-color:var(--brand)}
 .durs .durin{display:flex;align-items:center;gap:6px;color:var(--muted)}
 .durs .durin input{width:76px;padding:5px 8px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:inherit}
+.hfchips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px}
+.hfchips .chip{border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:999px;padding:6px 12px;font:600 13px Inter,'Noto Sans Armenian',sans-serif;cursor:pointer;opacity:.75}
+.hfchips .chip.on{background:var(--soft);color:var(--ink);border-color:var(--brand);opacity:1}
+.stackbar{display:flex;height:22px;border-radius:8px;overflow:hidden;background:var(--soft)}
+.stackbar>div{height:100%}
