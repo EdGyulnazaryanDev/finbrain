@@ -164,7 +164,7 @@ function renderChrome(){
   $('#h1').textContent='🧠 '+T('Финансовый мозг','Finance Brain','Ֆինանսական ուղեղ');
   $('#hsub').textContent=T('Бюджет семьи · кредиты · счета · куда направить лишние деньги','Family budget · loans · accounts · where to put extra money','Ընտանեկան բյուջե · վարկեր · հաշիվներ · ուր ուղղել ազատ գումարը');
   $('#foot').textContent=T('Это обучающий калькулятор, а не индивидуальная финансовая консультация. Проверяйте ставки и условия в своём банке.','This is an educational calculator, not personal financial advice. Check rates and terms with your bank.','Սա ուսուցողական հաշվիչ է, ոչ թե անհատական ֆինանսական խորհրդատվություն։ Տոկոսադրույքներն ու պայմանները ստուգեք ձեր բանկում։');
-  const tabs=[['profile','👨‍👩‍👧',T('Семья','Family','Ընտանիք')],['money','💸',T('Доходы/расходы','Income/costs','Եկամուտ/ծախս')],['accounts','💳',T('Счета','Accounts','Հաշիվներ')],['loans','🏦',T('Кредиты','Loans','Վարկեր')],['market','📈',T('Рынок','Market','Շուկա')],['analytics','📊',T('Аналитика','Analytics','Վերլուծություն')],['forecast','🔮',T('Прогноз','Forecast','Կանխատեսում')],['advice','💡',T('Лишние деньги','Extra money','Ազատ գումար')],['calc','🧮',T('Калькуляторы','Calculators','Հաշվիչներ')],['reminders','🔔',T('Напоминания','Reminders','Հիշեցումներ')]];
+  const tabs=[['profile','👨‍👩‍👧',T('Семья','Family','Ընտանիք')],['money','💸',T('Доходы/расходы','Income/costs','Եկամուտ/ծախս')],['ops','🧾',T('Операции','Transactions','Գործարքներ')],['accounts','💳',T('Счета','Accounts','Հաշիվներ')],['loans','🏦',T('Кредиты','Loans','Վարկեր')],['market','📈',T('Рынок','Market','Շուկա')],['analytics','📊',T('Аналитика','Analytics','Վերլուծություն')],['forecast','🔮',T('Прогноз','Forecast','Կանխատեսում')],['advice','💡',T('Лишние деньги','Extra money','Ազատ գումար')],['calc','🧮',T('Калькуляторы','Calculators','Հաշվիչներ')],['reminders','🔔',T('Напоминания','Reminders','Հիշեցումներ')]];
   $('#tabs').innerHTML=tabs.map(([k,i,n])=>`<button data-t="${k}" class="${k===tab?'on':''}"><span class="ic">${i}</span>${n}</button>`).join('');
   $('#lang').value=LANG;$('#cur').value=S.currency;
   $('#aititle').textContent='🤖 '+T('AI-помощник','AI assistant','AI օգնական');$('#aiin').placeholder=T('Спросите про бюджет, кредиты, вклады…','Ask about your budget, loans, deposits…','Հարցրեք բյուջեի, վարկերի, ավանդների մասին…');aiRender();renderUser();
@@ -422,6 +422,7 @@ function meter(label,val,max,goodMax,warnMax,suffix,invert){
 /* ================== ANALYTICS ================== */
 function insights(c){
   const t=[];const p=S.profile;
+  {const om=opsMonthSummary();if(om.n)t.push([om.out>om.inn?'warn':'',T('Разовые операции в этом месяце','One-off transactions this month','Այս ամսվա միանվագ գործարքները'),T(`Поступило +${fmt(om.inn)}, потрачено −${fmt(om.out)} сверх обычного бюджета (${om.n} операций). Подробно — во вкладке «Операции».`,`Received +${fmt(om.inn)}, spent −${fmt(om.out)} on top of the usual budget (${om.n} transactions). Details in the Transactions tab.`,`Մուտք՝ +${fmt(om.inn)}, ծախս՝ −${fmt(om.out)} սովորական բյուջեից ավելի (${om.n} գործարք)։ Մանրամասները՝ «Գործարքներ» բաժնում։`)])}
   if(c.fcf<0)t.push(['bad',T('Расходы больше доходов','Spending exceeds income','Ծախսերը գերազանցում են եկամուտները'),T(`Каждый месяц не хватает ${fmt(-c.fcf)}. Разница покрывается из накоплений или новыми долгами. Начните с «Желаний» (${fmt(c.want)}) и с самого дорогого кредита.`,`You’re short ${fmt(-c.fcf)} every month, and the gap comes out of savings or new debt. Start with “Wants” (${fmt(c.want)}) and your most expensive loan.`,`Ամեն ամիս պակասում է ${fmt(-c.fcf)}, և տարբերությունը ծածկվում է խնայողություններից կամ նոր պարտքերով։ Սկսեք «Ցանկություններից» (${fmt(c.want)}) և ամենաթանկ վարկից։`)]);
   if(c.dti>40)t.push(['bad',T('Высокая кредитная нагрузка','High debt load','Բարձր վարկային բեռ'),T(`На кредиты уходит ${pct(c.dti)} дохода. Безопасно — до 30–35%. Узнайте в банках про рефинансирование: объединение долгов под меньшую ставку может заметно снизить платёж.`,`${pct(c.dti)} of income goes to loans; safe is up to 30–35%. Ask banks about refinancing: combining debts at a lower rate can cut your payment noticeably.`,`Եկամտի ${pct(c.dti)}-ը գնում է վարկերին. անվտանգ է մինչև 30–35%։ Հարցրեք բանկերին վերաֆինանսավորման մասին. պարտքերը ավելի ցածր տոկոսով միավորելը կարող է զգալիորեն նվազեցնել վճարը։`)]);
   else if(c.dti>30)t.push(['warn',T('Кредитная нагрузка на грани','Debt load at the limit','Վարկային բեռը սահմանին է'),T(`${pct(c.dti)} дохода уходит на кредиты. Новые кредиты лучше не брать, пока не опуститесь ниже 30%.`,`${pct(c.dti)} of income goes to loans. Avoid new loans until you’re below 30%.`,`Եկամտի ${pct(c.dti)}-ը գնում է վարկերին։ Նոր վարկեր մի՛ վերցրեք, մինչև չիջնեք 30%-ից։`)]);
@@ -1259,6 +1260,95 @@ function fcOut(){
 }
 function addEvent(i){const q=EV_QUICK[i];const ev={month:q[0]==='payoff'?6:3,type:q[0],amount:0,acc:-1,loan:0,mode:'term',rate:q[0]==='newLoan'?14:0,months:36,use:'spend',note:L(q.slice(2,5)),target:S.loans.length?'loan:0':(S.accounts.length?'acc:0':'')};FC().events.push(ev);return `scen.events.${FC().events.length-1}.amount`}
 
+/* ================== OPERATIONS (разовые доходы и расходы) ================== */
+const OP_OUT={car:['🚗','Машина: ремонт, бензин','Car: repair, fuel','Մեքենա. վերանորոգում, վառելիք'],food:['🛒','Продукты','Groceries','Մթերք'],home:['🏠','Дом: ремонт, техника','Home: repair, appliances','Տուն. վերանորոգում, տեխնիկա'],health:['💊','Здоровье','Health','Առողջություն'],clothes:['👕','Одежда','Clothing','Հագուստ'],transport:['🚕','Транспорт','Transport','Տրանսպորտ'],fun:['🍽','Кафе, развлечения','Cafes, fun','Սրճարան, զվարճանք'],kids:['👶','Дети','Kids','Երեխաներ'],gifts:['🎁','Подарки','Gifts','Նվերներ'],travel:['✈️','Путешествия','Travel','Ճամփորդություն'],utility:['💡','Коммунальные','Utilities','Կոմունալ'],loan:['🏦','Платёж по кредиту','Loan payment','Վարկի վճար'],other:['📌','Другое','Other','Այլ']};
+const OP_IN={gift:['🎁','Подарок','Gift','Նվեր'],bonus:['💰','Премия','Bonus','Պարգևավճար'],salary:['💼','Зарплата','Salary','Աշխատավարձ'],side:['🧑‍💻','Подработка','Side job','Լրացուցիչ աշխատանք'],sale:['💵','Продажа','Sale','Վաճառք'],refund:['↩️','Возврат долга / денег','Repayment / refund','Պարտքի / գումարի վերադարձ'],interest:['🏦','Проценты, кэшбэк','Interest, cashback','Տոկոս, քեշբեք'],other:['📌','Другое','Other','Այլ']};
+const OP_QUICK=[['out','car','🔧','Ремонт авто','Car repair','Մեքենայի վերանորոգում'],['out','car','⛽','Бензин','Fuel','Բենզին'],['out','food','🛒','Продукты','Groceries','Մթերք'],['out','health','💊','Аптека','Pharmacy','Դեղատուն'],['out','fun','🍽','Ресторан','Restaurant','Ռեստորան'],['out','transport','🚕','Такси','Taxi','Տաքսի'],['out','clothes','👕','Одежда','Clothing','Հագուստ'],['out','home','📱','Техника','Electronics','Տեխնիկա'],['out','home','🛠','Ремонт дома','Home repair','Տան վերանորոգում'],['out','gifts','🎁','Подарок кому-то','Gift for someone','Նվեր ինչ-որ մեկին'],['out','other','🤝','Дал в долг','Lent money','Պարտք տվեցի'],
+  ['in','gift','🎁','Подарили деньги','Money gift','Գումար նվիրեցին'],['in','bonus','💰','Премия','Bonus','Պարգևավճար'],['in','side','🧑‍💻','Подработка','Side job','Լրացուցիչ աշխատանք'],['in','sale','💵','Продал вещь','Sold an item','Վաճառեցի իր'],['in','refund','↩️','Вернули долг','Debt repaid to me','Պարտքը վերադարձրին']];
+const FX_FALLBACK={AMD:1,USD:360.12,EUR:405.03,RUB:4.3947};
+function fxRate(cur){if(cur==='AMD')return 1;const r=(typeof MK!=='undefined'&&MK?.fx?.[cur])||FX_FALLBACK[cur];return num(r)||FX_FALLBACK[cur]||1}
+const toBase=(amt,cur)=>amt*fxRate(cur)/fxRate(S.currency);
+const todayStr=()=>ymd(new Date());
+function OPS(){if(!S.ops)S.ops=[];if(!S.opDraft)S.opDraft={type:'out',amount:0,cur:S.currency,cat:'other',date:todayStr(),acc:-1,note:''};if(!S.opView)S.opView='';return S.ops}
+const opCats=t=>t==='in'?OP_IN:OP_OUT;
+const monthKey=d=>String(d).slice(0,7);
+function monthName(k){const [y,m]=k.split('-');return MONTHSF()[+m-1]+' '+y}
+
+function vOps(){
+  OPS();const d=S.opDraft,cats=opCats(d.type);
+  if(!cats[d.cat])d.cat='other';
+  const accOpts={'-1':[T('Не связывать со счётом','Don’t link to an account','Չկապել հաշվի հետ')],...Object.fromEntries(S.accounts.map((a,i)=>[i,[(a.bank||lab(ATYPE[a.type]||''))+' · '+fmt(num(a.balance))]]))};
+  const conv=opConv();
+  return `<div class="card"><h2>✍️ ${T('Записать операцию','Log a transaction','Գրանցել գործարք')}</h2>
+    <p class="sub">${T('Разовые траты и поступления: ремонт машины, подарок, покупка техники, премия. Регулярные (зарплата, аренда, коммуналка) задаются в других вкладках.','One-off spending and income: car repair, a gift, an appliance, a bonus. Regular items (salary, rent, utilities) live in the other tabs.','Միանվագ ծախսեր և մուտքեր՝ մեքենայի վերանորոգում, նվեր, տեխնիկայի գնում, պարգևավճար։ Կանոնավորները (աշխատավարձ, վարձ, կոմունալ) լրացվում են այլ բաժիններում։')}</p>
+    <div class="grid">
+      <div class="wide">${seg('opDraft.type',[['out','➖ '+T('Расход','Expense','Ծախս')],['in','➕ '+T('Доход','Income','Մուտք')]])}</div>
+      ${inp('opDraft.amount',T('Сумма','Amount','Գումար'))}
+      ${sel('opDraft.cur',T('Валюта','Currency','Արժույթ'),{AMD:['֏ AMD'],USD:['$ USD'],EUR:['€ EUR'],RUB:['₽ RUB']})}
+      ${sel('opDraft.cat',T('Категория','Category','Կատեգորիա'),Object.fromEntries(Object.entries(cats).map(([k,v])=>[k,[v[0]+' '+L(v.slice(1,4))]])))}
+      <label class="f">${T('Дата','Date','Ամսաթիվ')}<input type="date" data-k="opDraft.date" data-t="str" value="${esc(d.date)}"></label>
+      ${sel('opDraft.acc',d.type==='in'?T('Зачислить на счёт','Credit to account','Մուտքագրել հաշվին'):T('Списать со счёта','Take from account','Գանձել հաշվից'),accOpts)}
+      ${inp('opDraft.note',T('Комментарий','Note','Մեկնաբանություն'),'str')}
+    </div><div id="opconv">${conv}</div>
+    <div class="qchips"><span class="muted">${T('Быстро:','Quick:','Արագ՝')}</span>${OP_QUICK.map((q,i)=>`<button class="chip" data-opq="${i}">${q[0]==='in'?'➕':'➖'} ${q[2]} ${esc(L(q.slice(3,6)))}</button>`).join('')}</div>
+    <div class="btns"><button class="btn" data-op="save">✓ ${T('Записать','Save','Գրանցել')}</button></div><p id="opmsg" class="sub"></p>
+  </div><div id="opsout"></div>`;
+}
+function opConv(){const d=S.opDraft;if(!d||d.cur===S.currency||!(num(d.amount)>0))return '';return `<p class="sub" style="margin:6px 0 0">≈ <b>${fmt(toBase(num(d.amount),d.cur))}</b> ${T('по курсу','at','փոխարժեքով')} 1 ${d.cur} = ${nf(fxRate(d.cur)/fxRate(S.currency),4)} ${S.currency}${(typeof MK!=='undefined'&&MK?.fx?.date)?` (${T('ЦБ','CBA','ԿԲ')}, ${fdate(MK.fx.date)})`:''}</p>`}
+function opsMonths(){const s=new Set(OPS().map(o=>monthKey(o.date)));s.add(monthKey(todayStr()));return [...s].sort().reverse()}
+function opsOut(){
+  const ops=OPS(),months=opsMonths();if(!S.opView||!months.includes(S.opView))S.opView=months[0];
+  const mk=S.opView,list=ops.filter(o=>monthKey(o.date)===mk).sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
+  const tin=list.filter(o=>o.type==='in').reduce((s,o)=>s+o.amount,0),tout=list.filter(o=>o.type==='out').reduce((s,o)=>s+o.amount,0);
+  // bars: last 6 months
+  const last=[];{const t=new Date();for(let i=5;i>=0;i--){const d=new Date(t.getFullYear(),t.getMonth()-i,1);last.push(ymd(d).slice(0,7))}}
+  const agg=k=>{const l=ops.filter(o=>monthKey(o.date)===k);return{i:l.filter(o=>o.type==='in').reduce((s,o)=>s+o.amount,0),o:l.filter(o=>o.type==='out').reduce((s,o)=>s+o.amount,0)}};
+  const bars=last.map(k=>({k,...agg(k)}));const bmax=Math.max(1,...bars.flatMap(b=>[b.i,b.o]));
+  const W=480,H=220,P=40,bw=(W-P-10)/bars.length;
+  const barSvg=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:230px">${[0,.5,1].map(f=>`<line x1="${P}" x2="${W-6}" y1="${H-24-(H-40)*f}" y2="${H-24-(H-40)*f}" stroke="var(--line)"/><text x="${P-4}" y="${H-21-(H-40)*f}" font-size="10" text-anchor="end" fill="var(--muted)">${k1(bmax*f)}</text>`).join('')}
+    ${bars.map((b,i)=>{const x=P+i*bw+bw*0.15,w=bw*0.33,hi=(H-40)*b.i/bmax,ho=(H-40)*b.o/bmax;return `<rect x="${x}" y="${H-24-hi}" width="${w}" height="${hi}" rx="3" fill="var(--c2)"/><rect x="${x+w+2}" y="${H-24-ho}" width="${w}" height="${ho}" rx="3" fill="var(--c4)"/><text x="${x+w}" y="${H-6}" font-size="14" text-anchor="middle" fill="${b.k===mk?'var(--brand)':'var(--muted)'}" font-weight="${b.k===mk?700:400}">${MONTHS()[+b.k.slice(5)-1]}</text>`}).join('')}</svg>
+    <div class="legend" style="flex-direction:row;gap:14px"><div><i style="background:var(--c2)"></i>${T('Доходы','Income','Մուտքեր')}</div><div><i style="background:var(--c4)"></i>${T('Расходы','Spending','Ծախսեր')}</div></div>`;
+  // categories donut for month
+  const colors=['var(--c1)','var(--c2)','var(--c3)','var(--c4)','var(--c5)','var(--c6)','var(--c7)','var(--c8)'];
+  const byCat={};list.filter(o=>o.type==='out').forEach(o=>byCat[o.cat]=(byCat[o.cat]||0)+o.amount);
+  const items=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,v],i)=>({n:(OP_OUT[k]||OP_OUT.other)[0]+' '+L((OP_OUT[k]||OP_OUT.other).slice(1,4)),v,c:colors[i%colors.length]}));
+  // cumulative within month
+  const [yy,mm]=mk.split('-').map(Number),days=dim(yy,mm-1);let run=0;const cum=[0];for(let dd=1;dd<=days;dd++){const ds=mk+'-'+String(dd).padStart(2,'0');list.filter(o=>o.date===ds).forEach(o=>run+=o.type==='in'?o.amount:-o.amount);cum.push(run)}
+  const isCur=mk===monthKey(todayStr()),upto=isCur?new Date().getDate():days;
+  const cumSvg=(()=>{const data=cum.slice(0,upto+1),mx=Math.max(0,...data),mn=Math.min(0,...data),rg=(mx-mn)||1,W2=640,H2=150,P2=46;const x=i=>P2+(W2-P2-8)*i/days,y=v=>H2-20-(H2-32)*(v-mn)/rg;
+    return `<svg viewBox="0 0 ${W2} ${H2}" width="100%" style="max-height:170px"><line x1="${P2}" x2="${W2-8}" y1="${y(0)}" y2="${y(0)}" stroke="var(--muted)" stroke-dasharray="2 3"/><text x="${P2-4}" y="${y(mx)+3}" font-size="10" text-anchor="end" fill="var(--muted)">${k1(mx)}</text><text x="${P2-4}" y="${y(mn)+3}" font-size="10" text-anchor="end" fill="var(--muted)">${k1(mn)}</text><polyline fill="none" stroke="${run>=0?'var(--c2)':'var(--c4)'}" stroke-width="2.5" points="${data.map((v,i)=>x(i).toFixed(1)+','+y(v).toFixed(1)).join(' ')}"/>${[1,10,20,days].map(dd=>`<text x="${x(dd)}" y="${H2-4}" font-size="10" text-anchor="middle" fill="var(--muted)">${dd}</text>`).join('')}</svg>`})();
+  const c=calc();const planOut=c.spend,share=planOut>0?tout/planOut*100:0;
+  return `<div class="card"><div class="seg" style="overflow-x:auto;flex-wrap:nowrap">${months.slice(0,12).map(k=>`<button data-seg="opView" data-v="${k}" class="${k===mk?'on':''}">${MONTHS()[+k.slice(5)-1]} ${k.slice(2,4)}</button>`).join('')}</div>
+    <div class="grid" style="margin-top:12px">${stat(T('Разовые доходы','One-off income','Միանվագ մուտքեր'),'+'+fmt(tin),'good')}${stat(T('Разовые расходы','One-off spending','Միանվագ ծախսեր'),'−'+fmt(tout),'bad')}${stat(T('Итог месяца','Month total','Ամսվա արդյունք'),fmt(tin-tout),tin-tout>=0?'good':'bad')}${stat(T('Операций','Transactions','Գործարքներ'),list.length)}</div>
+    ${tout>0&&planOut>0?tipH(share>20?'warn':'',T('Сверх плана','On top of the plan','Պլանից ավելի'),T(`Разовые траты за ${monthName(mk)} — ${fmt(tout)}, это ${pct(share)} к вашим обычным расходам в месяц (${fmt(planOut)}).`,`One-off spending in ${monthName(mk)} is ${fmt(tout)}, or ${pct(share)} on top of your usual monthly spending (${fmt(planOut)}).`,`${monthName(mk)}-ի միանվագ ծախսերը՝ ${fmt(tout)}, ձեր սովորական ամսական ծախսերի (${fmt(planOut)}) ${pct(share)}-ն են։`)):''}
+  </div>
+  <div class="g2">
+    <div class="card"><h2>📊 ${T('По месяцам','By month','Ըստ ամիսների')}</h2>${barSvg}</div>
+    <div class="card"><h2>🍩 ${T('Куда ушли деньги','Where the money went','Ուր գնաց գումարը')} · ${monthName(mk)}</h2>${items.length?donut(items):`<p class="muted">${T('Расходов в этом месяце нет.','No spending this month.','Այս ամիս ծախսեր չկան։')}</p>`}</div>
+  </div>
+  <div class="card"><h2>📉 ${T('Ход месяца','Month so far','Ամսվա ընթացքը')} · ${monthName(mk)}</h2>${cumSvg}<p class="sub">${T('Накопительный итог разовых операций по дням.','Running total of one-off transactions by day.','Միանվագ գործարքների կուտակային արդյունքն ըստ օրերի։')}</p></div>
+  <div class="card"><h2>🧾 ${T('Журнал','Log','Մատյան')} · ${monthName(mk)}</h2>
+    ${list.length?`<div class="scroll"><table>${list.map(o=>{const cat=(opCats(o.type)[o.cat]||OP_OUT.other);const acc=S.accounts[o.acc];return `<tr><td style="white-space:nowrap;width:60px"><b>${+o.date.slice(8)} ${MONTHS()[+o.date.slice(5,7)-1]}</b></td><td>${cat[0]} ${esc(o.note||L(cat.slice(1,4)))}<br><span class="muted" style="font-size:12px">${esc(L(cat.slice(1,4)))}${o.cur!==S.currency?` · ${nf(o.orig,2)} ${o.cur}`:''}${o.acc>=0&&acc?' · '+esc(acc.bank||''):''}</span></td><td class="n"><b class="${o.type==='in'?'good':'bad'}">${o.type==='in'?'+':'−'}${fmt(o.amount)}</b></td><td style="width:40px"><button class="x" data-opdel="${o.id}">✕</button></td></tr>`}).join('')}</table></div>`:`<p class="muted">${T('В этом месяце операций нет. Запишите первую выше.','No transactions this month. Log the first one above.','Այս ամիս գործարքներ չկան։ Գրանցեք առաջինը վերևում։')}</p>`}
+  </div>`;
+}
+function opSave(){
+  const d=S.opDraft,amt=num(d.amount);const m=$('#opmsg');
+  if(amt<=0){if(m)m.textContent=T('Введите сумму.','Enter an amount.','Մուտքագրեք գումարը։');return}
+  const base=Math.round(toBase(amt,d.cur)*100)/100,acc=num(d.acc);
+  const op={id:Date.now(),type:d.type,amount:base,orig:amt,cur:d.cur,rate:fxRate(d.cur)/fxRate(S.currency),cat:d.cat,date:d.date||todayStr(),note:String(d.note||'').slice(0,120),acc:acc>=0&&S.accounts[acc]?acc:-1};
+  if(op.acc>=0){const a=S.accounts[op.acc];a.balance=Math.round((num(a.balance)+(op.type==='in'?base:-base))*100)/100}
+  OPS().push(op);S.opView=monthKey(op.date);
+  Object.assign(S.opDraft,{amount:0,note:'',cur:S.currency,date:todayStr()});save();render();
+  const mm=$('#opmsg');if(mm)mm.textContent='✓ '+T('Записано','Saved','Գրանցված է')+(op.acc>=0?' · '+T('баланс счёта обновлён','account balance updated','հաշվի մնացորդը թարմացվեց'):'');
+}
+function opDelete(id){
+  const ops=OPS(),i=ops.findIndex(o=>String(o.id)===String(id));if(i<0)return;const o=ops[i];
+  if(o.acc>=0&&S.accounts[o.acc]){const a=S.accounts[o.acc];a.balance=Math.round((num(a.balance)-(o.type==='in'?o.amount:-o.amount))*100)/100}
+  ops.splice(i,1);save();render();
+}
+function opQuick(i){const q=OP_QUICK[i];Object.assign(S.opDraft,{type:q[0],cat:q[1],note:L(q.slice(3,6))});return 'opDraft.amount'}
+function opsMonthSummary(){OPS();const mk=monthKey(todayStr());const l=S.ops.filter(o=>monthKey(o.date)===mk);return{inn:l.filter(o=>o.type==='in').reduce((s,o)=>s+o.amount,0),out:l.filter(o=>o.type==='out').reduce((s,o)=>s+o.amount,0),n:l.length}}
+
 /* ================== RENDER ================== */
 function render(){
   renderChrome();
@@ -1268,7 +1358,7 @@ function render(){
   if(out){$('#aibtn').classList.add('hide');
     if(AUTH==='out'){authMode=authMode||'login';openAuth();$('#authmodal').classList.add('gate')}
     return}
-  const v={profile:()=>vProfile()+dataCard(),money:vMoney,accounts:vAccounts,loans:vLoans,market:vMarket,analytics:vAnalytics,forecast:vForecast,advice:vAdvice,calc:vCalc,reminders:vRem}[tab]||vProfile;
+  const v={profile:()=>vProfile()+dataCard(),money:vMoney,accounts:vAccounts,loans:vLoans,market:vMarket,analytics:vAnalytics,ops:vOps,forecast:vForecast,advice:vAdvice,calc:vCalc,reminders:vRem}[tab]||vProfile;
   $('#view').innerHTML=v();
   if(tab==='reminders')renderTg();
   live();
@@ -1282,6 +1372,8 @@ function live(){
   if($('#accout'))$('#accout').innerHTML=accOut();
   if($('#nlout'))$('#nlout').innerHTML=nlOut();
   if($('#calcout'))$('#calcout').innerHTML=calcOut();
+  if($('#opsout'))$('#opsout').innerHTML=opsOut();
+  if($('#opconv'))$('#opconv').innerHTML=opConv();
   if($('#fcout'))$('#fcout').innerHTML=fcOut();
   if($('#remout'))$('#remout').innerHTML=remOut();
 }
@@ -1301,6 +1393,9 @@ document.addEventListener('click',e=>{
   if(b.dataset.q){const focus=quickAdd(b.dataset.q,+b.dataset.i);save();render();const el=document.querySelector(`[data-k="${focus}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.tg){tgAction(b.dataset.tg);return}
   if(b.dataset.ev!==undefined){const f=addEvent(+b.dataset.ev);save();render();const el=document.querySelector(`[data-k="${f}"]`);if(el){el.focus();el.select?.()}return}
+  if(b.dataset.op==='save'){opSave();return}
+  if(b.dataset.opdel){opDelete(b.dataset.opdel);return}
+  if(b.dataset.opq!==undefined){const f=opQuick(+b.dataset.opq);save();render();const el=document.querySelector(`[data-k="${f}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.calc){calcAction(b.dataset.calc);return}
   if(b.dataset.paid){markPaid(b.dataset.paid,b.dataset.d);return}
   if(b.dataset.qr!==undefined){const f=quickRem(+b.dataset.qr);save();render();const el=document.querySelector(`[data-k="${f}"]`);if(el){el.focus();el.select?.()}return}
