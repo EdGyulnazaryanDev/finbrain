@@ -141,3 +141,5 @@ input::placeholder{color:var(--muted);opacity:.6}
 html,body{overflow-x:hidden}
 .hbtn-op{background:#fff;color:var(--brand);border-color:#fff;font-weight:700}
 @media(max-width:720px){.hbtn-op{order:-1}}
+.r-loan2{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))!important}
+.r-loan2 .x{justify-self:start;width:44px}

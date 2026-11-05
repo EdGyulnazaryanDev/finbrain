@@ -113,6 +113,7 @@ function emptyBudget() {
     set: { dep: 9, inv: 8, tax: 10, infl: 4 }, adv: { amount: 0, mode: 'once', horizon: 0 },
   };
 }
+const ymDay = (ym, day) => { const [y, m] = ym.split('-').map(Number); return ym + '-' + String(Math.min(day || 1, new Date(y, m, 0).getDate())).padStart(2, '0'); };
 const BANKS_RE = /ameriabank|ardshinbank|acba|inecobank|evocabank|idbank|unibank|araratbank|amio bank|fast bank|vtb|converse bank|armeconombank/i;
 function buildImport(r, { mortgageBalance = 0, mortgageRate = 0, now = new Date() } = {}) {
   const src = 'xlsx', b = { loans: [], incomes: [], expenses: [], accounts: [], events: [], reminders: [], depositTarget: false };
@@ -122,7 +123,10 @@ function buildImport(r, { mortgageBalance = 0, mortgageRate = 0, now = new Date(
   for (const d of r.debts) {
     const n = Math.max(1, d.schedule.length), rocket = /rocket|line/i.test(d.type);
     const tclean = d.type.replace(/\s*\d+[.,]?\d*\s*%/, '').replace(/,\s*$/, '').trim();
-    b.loans.push({ name: human(d.contract) ? d.contract : (tclean || 'Кредит') + ' · ' + short(d.contract), bank: rocket ? 'Rocket Line' : ((d.contract + ' ' + d.type).match(BANKS_RE) || [''])[0], type: kind(d.type + ' ' + d.contract), balance: Math.round(d.balance * 100) / 100, rate: d.rate, payment: Math.ceil(d.balance / n * (1 + d.rate / 1200)), day: d.due ? +d.due.slice(8, 10) : 1, contract: d.contract, schedule: d.schedule, src });
+    b.loans.push({ name: human(d.contract) ? d.contract : (tclean || 'Кредит') + ' · ' + short(d.contract), bank: rocket ? 'Rocket Line' : ((d.contract + ' ' + d.type).match(BANKS_RE) || [''])[0], type: kind(d.type + ' ' + d.contract), balance: Math.round(d.balance * 100) / 100, rate: d.rate, payment: Math.ceil(d.balance / n * (1 + d.rate / 1200)), day: d.due ? +d.due.slice(8, 10) : 1, contract: d.contract, schedule: d.schedule,
+      mode: d.schedule.length > 1 ? 'plan' : d.schedule.length === 1 || d.due ? 'once' : 'monthly',
+      due: d.schedule.length === 1 ? ymDay(d.schedule[0].ym, d.due ? +d.due.slice(8, 10) : 1) : d.schedule.length ? undefined : d.due || undefined,
+      deadline: d.due || undefined, src });
   }
   const s = r.settings || {};
   if (s.salary) b.incomes.push({ name: 'Зарплата', amount: s.salary, src });

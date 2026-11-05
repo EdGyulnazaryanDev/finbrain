@@ -79,8 +79,20 @@ function nextDate(day){const t=new Date();t.setHours(0,0,0,0);let d=new Date(t.g
 function dim(y,m){return new Date(y,m+1,0).getDate()}
 
 /* ================== FINANCE ENGINE ================== */
+/* ---- виды погашения: ежемесячно / одной суммой к дате / по графику ---- */
+function loanMode(l){return l.mode||(Array.isArray(l.schedule)&&l.schedule.length?(l.schedule.length===1?'once':'plan'):'monthly')}
+const isTemp=l=>loanMode(l)!=='monthly';
+function ymDay(ym,day){const [y,m]=ym.split('-').map(Number);return ym+'-'+String(Math.min(num(day)||1,dim(y,m-1))).padStart(2,'0')}
+function loanDue(l){if(l.due)return l.due;if(Array.isArray(l.schedule)&&l.schedule.length)return ymDay(l.schedule[l.schedule.length-1].ym,l.day);return null}
+function loanPlan(l){const md=loanMode(l);
+  if(md==='once'){const d=loanDue(l);return d?[{date:d,amount:num(l.balance)}]:[]}
+  if(md==='plan')return (l.schedule||[]).map(x=>({date:ymDay(x.ym,l.day),amount:num(x.amount)})).sort((a,b)=>a.date.localeCompare(b.date));
+  return []}
+function monthsUntil(ds){const d=new Date(ds+'T00:00:00'),t=new Date();return (d.getFullYear()-t.getFullYear())*12+(d.getMonth()-t.getMonth())}
+const daysUntil=ds=>{const t=new Date();t.setHours(0,0,0,0);return Math.round((new Date(ds+'T00:00:00')-t)/864e5)};
 function loanInfo(l){
   const B=num(l.balance),r=num(l.rate)/1200,P=num(l.payment);
+  if(isTemp(l)){const pl=loanPlan(l),last=pl[pl.length-1];return{n:B<=0?0:last?Math.max(0,monthsUntil(last.date))+1:Infinity,interest:0,ok:B<=0||!!last,minPay:0,temp:true,due:last?.date}}
   if(B<=0)return{n:0,interest:0,ok:true,minPay:0};
   if(P<=0)return{n:Infinity,interest:Infinity,ok:false,minPay:B*r};
   if(r===0)return{n:B/P,interest:0,ok:true,minPay:0};
@@ -91,7 +103,7 @@ function loanInfo(l){
 }
 function annuity(B,rateY,n){const r=rateY/1200;if(n<=0)return B;if(r===0)return B/n;return B*r/(1-Math.pow(1+r,-n))}
 function simulate(loans,{extra=0,lump=0,order='avalanche',rollover=true}={}){
-  let Ls=loans.map((l,i)=>({i,b:num(l.balance),r:num(l.rate)/1200,p:num(l.payment),done:null}));
+  let Ls=loans.map((l,i)=>{const t=isTemp(l),pm={};if(t)loanPlan(l).forEach(x=>{const k=Math.max(1,monthsUntil(x.date)+1);pm[k]=(pm[k]||0)+x.amount});return{i,b:num(l.balance),r:t?0:num(l.rate)/1200,p:t?0:num(l.payment),done:null,temp:t,pm,last:t?Math.max(1,...Object.keys(pm).map(Number)):0}});
   const sortFn=order==='avalanche'?(a,b)=>b.r-a.r||a.b-b.b:(a,b)=>a.b-b.b||b.r-a.r;
   const pay=amt=>{for(const l of [...Ls].filter(x=>x.b>0.01).sort(sortFn)){if(amt<=0)break;const t=Math.min(amt,l.b);l.b-=t;amt-=t}return amt};
   pay(lump);
@@ -100,8 +112,8 @@ function simulate(loans,{extra=0,lump=0,order='avalanche',rollover=true}={}){
     m++;let pool=extra;
     for(const l of Ls){
       if(l.b<=0.01){if(rollover)pool+=l.p;continue}
-      const i=l.b*l.r;I+=i;l.b+=i;const t=Math.min(l.p,l.b);l.b-=t;
-      if(rollover)pool+=l.p-t;
+      const i=l.b*l.r;I+=i;l.b+=i;const due=l.temp?(m>=l.last?l.b:(l.pm[m]||0)):l.p;const t=Math.min(due,l.b);l.b-=t;
+      if(rollover&&!l.temp)pool+=l.p-t;
     }
     pool=pay(pool);
     curve.push(Ls.reduce((s,l)=>s+Math.max(0,l.b),0));
@@ -120,7 +132,9 @@ function calc(){
   const housing=p.housing.type==='rent'?num(p.housing.rent):num(p.housing.maint);
   const util=Object.values(p.util).reduce((s,v)=>s+num(v),0);
   let need=0,want=0;S.expenses.forEach(e=>{(CATS[e.cat]?.[1]==='need')?need+=num(e.amount):want+=num(e.amount)});
-  const loans=S.loans.reduce((s,l)=>s+num(l.payment),0);
+  const loans=S.loans.filter(l=>!isTemp(l)).reduce((s,l)=>s+num(l.payment),0);
+  const soonList=S.loans.filter(isTemp).flatMap(l=>num(l.balance)>0?loanPlan(l).map(x=>({...x,l,days:daysUntil(x.date)})):[]).filter(x=>x.days<=30).sort((a,b)=>a.date.localeCompare(b.date));
+  const soonPay=soonList.reduce((s,x)=>s+x.amount,0);
   const debt=S.loans.reduce((s,l)=>s+num(l.balance),0);
   const needs=need+kids+car+housing+util;
   const spend=needs+want+loans;
@@ -144,7 +158,7 @@ function calc(){
   const needShare=income>0?needs/income*100:100;
   sc+=needShare<=50?20:needShare<=65?12:needShare<=80?5:0;
   if(fcf<0)sc=Math.min(sc,25);
-  return{income,kids,car,housing,util,need,want,loans,debt,needs,spend,fcf,savingsRate,dti,cushion,target,essential,infos,free,score:Math.round(sc),needShare,earners,savings,assets,passive,net:assets-debt};
+  return{income,kids,car,housing,util,need,want,loans,debt,needs,spend,fcf,savingsRate,dti,cushion,target,essential,infos,free,soonList,soonPay,score:Math.round(sc),needShare,earners,savings,assets,passive,net:assets-debt};
 }
 
 /* ================== UI PRIMITIVES ================== */
@@ -260,7 +274,7 @@ function accOut(){
   const oneMonth=c.essential;
   if(idle>oneMonth*1.2&&idle>0){const gain=fmt((idle-oneMonth)*S.set.dep/1200*(1-S.set.tax/100));tips.push(['warn',T('Деньги лежат без процентов','Money sitting at 0%','Գումարը մնում է առանց տոկոսի'),T(`На карте и наличными ${fmt(idle)}, а на текущие траты нужно около ${fmt(oneMonth)} в месяц. Если перевести разницу ${fmt(idle-oneMonth)} на накопительный счёт под ${S.set.dep}%, это даст ≈${gain} в месяц.`,`You hold ${fmt(idle)} on cards and in cash, but monthly needs are about ${fmt(oneMonth)}. Moving the extra ${fmt(idle-oneMonth)} to a savings account at ${S.set.dep}% would earn ≈${gain} a month.`,`Քարտերում և կանխիկ ունեք ${fmt(idle)}, իսկ ամսական ծախսերի համար պետք է մոտ ${fmt(oneMonth)}։ Եթե ավելցուկը (${fmt(idle-oneMonth)}) փոխանցեք ${S.set.dep}% խնայողական հաշվի, ամսական կստանաք ≈${gain}։`)])}
   const excess=c.savings-c.target*c.essential;
-  const top=[...S.loans].filter(l=>num(l.balance)>0).sort((a,b)=>num(b.rate)-num(a.rate))[0];
+  const top=[...S.loans].filter(l=>num(l.balance)>0&&!isTemp(l)).sort((a,b)=>num(b.rate)-num(a.rate))[0];
   const maxDep=Math.max(0,...S.accounts.filter(a=>ATYPE[a.type]?.[1]).map(a=>num(a.rate)));
   if(top&&excess>0&&num(top.rate)>maxDep)tips.push(['warn',T('Деньги лежат под меньший процент, чем кредит','Savings earn less than your loan costs','Խնայողությունները բերում են ավելի քիչ, քան արժե վարկը'),T(`Сверх подушки у вас ${fmt(excess)}. Лучший счёт даёт ${maxDep}%, а «${esc(top.name)}» стоит ${num(top.rate)}%. Если погасить кредит этой суммой, вы сэкономите больше, чем заработаете на счёте.`,`You have ${fmt(excess)} above your cushion. Your best account pays ${maxDep}%, while “${esc(top.name)}” costs ${num(top.rate)}%. Paying the loan down with this money saves more than the account earns.`,`Բարձից ավել ունեք ${fmt(excess)}։ Լավագույն հաշիվը տալիս է ${maxDep}%, իսկ «${esc(top.name)}» վարկն արժե ${num(top.rate)}%։ Այս գումարով վարկը մարելով՝ ավելի շատ կխնայեք, քան կվաստակեք հաշվի վրա։`)]);
   if(top&&excess<=0&&num(top.rate)>maxDep&&c.savings>0)tips.push(['',T('Не гасите кредит всеми накоплениями','Don’t use all your savings on the loan','Բոլոր խնայողություններով վարկը մի՛ մարեք'),T(`Накопления (${fmt(c.savings)}) пока не дотягивают до подушки на ${c.target} мес. Направлять их на досрочное погашение рано.`,`Your savings (${fmt(c.savings)}) don’t yet cover a ${c.target}-month cushion, so it’s too early to put them toward prepayment.`,`Խնայողությունները (${fmt(c.savings)}) դեռ չեն հասնում ${c.target} ամսվա բարձին։ Վաղաժամկետ մարման համար դեռ վաղ է։`)]);
@@ -286,9 +300,10 @@ function accOut(){
 function vLoans(){
   return `
   <div class="card"><h2>${T('Кредиты и долги','Loans & debts','Վարկեր և պարտքեր')}</h2><p class="sub">${T('Остаток долга, ставка (% годовых), ежемесячный платёж и день оплаты. Остальное калькулятор посчитает сам.','Remaining balance, annual rate, monthly payment and due day. The calculator works out the rest.','Պարտքի մնացորդը, տարեկան տոկոսադրույքը, ամսական վճարը և վճարման օրը։ Մնացածը հաշվիչը կհաշվի ինքը։')}</p>
-    ${S.loans.map((l,i)=>`<div class="row r-loan">
+    ${S.loans.map((l,i)=>`<div class="row r-loan r-loan2">
       ${inp(`loans.${i}.name`,T('Название','Name','Անվանում'),'str','dl-loan')}${inp(`loans.${i}.bank`,T('Банк','Bank','Բանկ'),'str','dl-bank')}${sel(`loans.${i}.type`,T('Тип','Type','Տեսակ'),LTYPE)}${inp(`loans.${i}.rate`,T('Ставка %','Rate %','Տոկոս %'))}
-      ${inp(`loans.${i}.balance`,T('Остаток долга','Balance','Մնացորդ'))}${inp(`loans.${i}.payment`,T('Платёж в мес.','Monthly payment','Ամսական վճար'))}${inp(`loans.${i}.day`,T('День','Day','Օր'))}
+      ${inp(`loans.${i}.balance`,loanMode(l)==='monthly'?T('Остаток долга','Balance','Մնացորդ'):T('Сумма к оплате','Amount due','Վճարման ենթակա գումար'))}${sel(`loans.${i}.mode`,T('Как гасится','Repayment','Ինչպես է մարվում'),{monthly:[T('Каждый месяц','Monthly','Ամեն ամիս')],once:[T('Одной суммой к дате','One payment by a date','Մեկ վճարով՝ մինչև ամսաթիվ')],plan:[T('По графику','By schedule','Ըստ ժամանակացույցի')]})}
+      ${loanMode(l)==='monthly'?inp(`loans.${i}.payment`,T('Платёж в мес.','Monthly payment','Ամսական վճար'))+inp(`loans.${i}.day`,T('День','Day','Օր')):loanMode(l)==='once'?`<label class="f">${T('Дата оплаты','Payment date','Վճարման ամսաթիվ')}<input type="date" data-k="loans.${i}.due" data-t="str" value="${esc(loanDue(l)||'')}"></label>`+(l.deadline&&l.deadline!==loanDue(l)?`<div class="muted" style="font-size:12px;align-self:end">${T('крайний срок','deadline','վերջնաժամկետ')} ${fdate(l.deadline)}</div>`:''):`<div class="muted" style="font-size:12px;align-self:end">${loanPlan(l).map(x=>fdate(x.date)+': '+fmt(x.amount)).join('<br>')||T('графика нет','no schedule','ժամանակացույց չկա')}</div>`}
       <button class="x" data-del="loans.${i}">✕</button></div>`).join('')||`<p class="muted">${T('Кредитов нет, отлично!','No loans — great!','Վարկեր չկան. հիանալի է։')}</p>`}
     ${qchips('loan')}<div class="btns"><button class="btn ghost" data-add="loan">+ ${T('Кредит','Loan','Վարկ')}</button></div>
   </div>
@@ -299,14 +314,14 @@ function vLoans(){
 function loanOut(){
   if(!S.loans.length)return '';
   const c=calc();
-  const rows=S.loans.map((l,i)=>{const f=c.infos[i];return `<tr><td><b>${esc(l.name)}</b><br><span class="muted">${lab(LTYPE[l.type]||'')} · ${num(l.rate)}%${l.bank?' · '+esc(l.bank):''}</span></td>
-    <td class="n">${fmt(num(l.balance))}</td><td class="n">${f.ok?dur(f.n):`<span class="bad">${T('не гасится','never repaid','չի մարվում')}</span>`}<br><span class="muted">${f.ok?monthLabel(f.n):''}</span></td>
-    <td class="n">${f.ok?fmt(f.interest):'∞'}</td></tr>`}).join('');
+  const rows=S.loans.map((l,i)=>{const f=c.infos[i];const tmp=f.temp;return `<tr><td><b>${esc(l.name)}</b><br><span class="muted">${lab(LTYPE[l.type]||'')} · ${num(l.rate)}%${l.bank?' · '+esc(l.bank):''}${tmp?' · '+(loanMode(l)==='once'?T('одной суммой','one payment','մեկ վճարով'):T('по графику','by schedule','ըստ ժամանակացույցի')):''}</span></td>
+    <td class="n">${fmt(num(l.balance))}</td><td class="n">${tmp?(f.due?`<b>${fdate(f.due)}</b><br><span class="muted">${daysUntil(f.due)<0?`<span class="bad">${T('просрочено','overdue','ժամկետանց')}</span>`:T(`через ${daysUntil(f.due)} дн.`,`in ${daysUntil(f.due)} days`,`${daysUntil(f.due)} օրից`)}</span>`:'—'):f.ok?dur(f.n)+`<br><span class="muted">${monthLabel(f.n)}</span>`:`<span class="bad">${T('не гасится','never repaid','չի մարվում')}</span>`}</td>
+    <td class="n">${tmp?'—':f.ok?fmt(f.interest):'∞'}</td></tr>`}).join('');
   const bad=S.loans.map((l,i)=>c.infos[i].ok?'':tipH('bad',T(`«${esc(l.name)}»: платёж меньше процентов`,`“${esc(l.name)}”: payment is below the interest`,`«${esc(l.name)}». վճարը փոքր է տոկոսից`),T(`Каждый месяц банк начисляет ≈${fmt(c.infos[i].minPay)} процентов, поэтому долг не уменьшается. Платите больше этой суммы.`,`The bank charges ≈${fmt(c.infos[i].minPay)} interest a month, so the debt never shrinks. Pay more than that.`,`Բանկը ամսական հաշվարկում է ≈${fmt(c.infos[i].minPay)} տոկոս, ուստի պարտքը չի նվազում։ Վճարեք դրանից ավելին։`))).join('');
   const ev=[];const today=new Date();today.setHours(0,0,0,0);
-  S.loans.forEach((l,i)=>{if(num(l.balance)<=0)return;const d=nextDate(num(l.day)||1);const n=c.infos[i].n;for(let k=0;k<3&&k<Math.ceil(n);k++){const dd=new Date(d.getFullYear(),d.getMonth()+k,1);dd.setDate(Math.min(num(l.day)||1,dim(dd.getFullYear(),dd.getMonth())));ev.push({d:dd,l})}});
+  S.loans.forEach((l,i)=>{if(num(l.balance)<=0)return;if(isTemp(l)){loanPlan(l).forEach(x=>{const dd=new Date(x.date+'T00:00:00');if(daysUntil(x.date)>=-3&&daysUntil(x.date)<=92)ev.push({d:dd,l,amt:x.amount})});return}const d=nextDate(num(l.day)||1);const n=c.infos[i].n;for(let k=0;k<3&&k<Math.ceil(n);k++){const dd=new Date(d.getFullYear(),d.getMonth()+k,1);dd.setDate(Math.min(num(l.day)||1,dim(dd.getFullYear(),dd.getMonth())));ev.push({d:dd,l})}});
   ev.sort((a,b)=>a.d-b.d);
-  const cal=ev.map(e=>{const days=Math.round((e.d-today)/864e5);return `<tr><td><b>${e.d.getDate()} ${MONTHS()[e.d.getMonth()]}</b><br><span class="muted">${days===0?T('сегодня','today','այսօր'):days===1?T('завтра','tomorrow','վաղը'):T(`через ${days} дн.`,`in ${days} days`,`${days} օրից`)}</span></td><td>${esc(e.l.name)}</td><td class="n">${fmt(num(e.l.payment))}</td></tr>`}).join('');
+  const cal=ev.map(e=>{const days=Math.round((e.d-today)/864e5);return `<tr><td><b>${e.d.getDate()} ${MONTHS()[e.d.getMonth()]}</b><br><span class="muted">${days===0?T('сегодня','today','այսօր'):days===1?T('завтра','tomorrow','վաղը'):T(`через ${days} дн.`,`in ${days} days`,`${days} օրից`)}</span></td><td>${esc(e.l.name)}${e.amt!=null?` <span class="pill p-warn">${T('разовый','one-off','միանվագ')}</span>`:''}</td><td class="n">${fmt(e.amt??num(e.l.payment))}</td></tr>`}).join('');
   const totI=c.infos.reduce((s,f)=>s+(f.ok?f.interest:0),0);
   return `
   <div class="card"><h2>${T('Когда и сколько платить','When and how much to pay','Երբ և որքան վճարել')}</h2><p class="sub">${T('Ближайшие платежи на 3 месяца вперёд.','Upcoming payments for the next 3 months.','Առաջիկա վճարումները 3 ամսվա համար։')}</p>
@@ -424,6 +439,7 @@ function meter(label,val,max,goodMax,warnMax,suffix,invert){
 /* ================== ANALYTICS ================== */
 function insights(c){
   const t=[];const p=S.profile;
+  if(c.soonList.length){const od=c.soonList.filter(x=>x.days<0),cash=Math.max(0,c.savings)+Math.max(0,c.fcf);t.push([od.length||c.soonPay>cash?'bad':'warn',T(`Разовые платежи по займам за 30 дней: ${fmt(c.soonPay)}`,`One-off loan payments due in 30 days: ${fmt(c.soonPay)}`,`Միանվագ վարկային վճարներ 30 օրում՝ ${fmt(c.soonPay)}`),c.soonList.slice(0,6).map(x=>`${fdate(x.date)} — ${esc(x.l.name)}: <b>${fmt(x.amount)}</b>${x.days<0?` <span class="bad">${T('просрочено','overdue','ժամկետանց')}</span>`:''}`).join('<br>')+(c.soonList.length>6?'<br>'+T(`и ещё ${c.soonList.length-6}`,`and ${c.soonList.length-6} more`,`և ևս ${c.soonList.length-6}`):'')+'<br><span class="muted">'+T('Они не входят в ежемесячные расходы — это платежи к конкретной дате.','These aren’t part of monthly spending — they’re due on specific dates.','Դրանք չեն մտնում ամսական ծախսերի մեջ. դրանք վճարներ են կոնկրետ ամսաթվի։')+'</span>'])}
   {const om=opsMonthSummary();if(om.n)t.push([om.out>om.inn?'warn':'',T('Разовые операции в этом месяце','One-off transactions this month','Այս ամսվա միանվագ գործարքները'),T(`Поступило +${fmt(om.inn)}, потрачено −${fmt(om.out)} сверх обычного бюджета (${om.n} операций). Подробно — во вкладке «Операции».`,`Received +${fmt(om.inn)}, spent −${fmt(om.out)} on top of the usual budget (${om.n} transactions). Details in the Transactions tab.`,`Մուտք՝ +${fmt(om.inn)}, ծախս՝ −${fmt(om.out)} սովորական բյուջեից ավելի (${om.n} գործարք)։ Մանրամասները՝ «Գործարքներ» բաժնում։`)])}
   if(c.fcf<0)t.push(['bad',T('Расходы больше доходов','Spending exceeds income','Ծախսերը գերազանցում են եկամուտները'),T(`Каждый месяц не хватает ${fmt(-c.fcf)}. Разница покрывается из накоплений или новыми долгами. Начните с «Желаний» (${fmt(c.want)}) и с самого дорогого кредита.`,`You’re short ${fmt(-c.fcf)} every month, and the gap comes out of savings or new debt. Start with “Wants” (${fmt(c.want)}) and your most expensive loan.`,`Ամեն ամիս պակասում է ${fmt(-c.fcf)}, և տարբերությունը ծածկվում է խնայողություններից կամ նոր պարտքերով։ Սկսեք «Ցանկություններից» (${fmt(c.want)}) և ամենաթանկ վարկից։`)]);
   if(c.dti>40)t.push(['bad',T('Высокая кредитная нагрузка','High debt load','Բարձր վարկային բեռ'),T(`На кредиты уходит ${pct(c.dti)} дохода. Безопасно — до 30–35%. Узнайте в банках про рефинансирование: объединение долгов под меньшую ставку может заметно снизить платёж.`,`${pct(c.dti)} of income goes to loans; safe is up to 30–35%. Ask banks about refinancing: combining debts at a lower rate can cut your payment noticeably.`,`Եկամտի ${pct(c.dti)}-ը գնում է վարկերին. անվտանգ է մինչև 30–35%։ Հարցրեք բանկերին վերաֆինանսավորման մասին. պարտքերը ավելի ցածր տոկոսով միավորելը կարող է զգալիորեն նվազեցնել վճարը։`)]);
@@ -492,7 +508,7 @@ function vAdvice(){
 function advOut(){
   const c=calc(),A=num(S.adv.amount),once=S.adv.mode==='once';
   if(A<=0)return `<div class="card"><p class="muted">${T('Введите сумму выше.','Enter an amount above.','Մուտքագրեք գումարը վերևում։')}</p></div>`;
-  const st=S.set,live=S.loans.filter(l=>num(l.balance)>0&&loanInfo(l).ok);
+  const st=S.set,live=S.loans.filter(l=>num(l.balance)>0&&!isTemp(l)&&loanInfo(l).ok);
   const top=[...live].sort((a,b)=>num(b.rate)-num(a.rate))[0];
   const base=simulate(S.loans,{rollover:false});
   let H=num(S.adv.horizon)||(top?Math.min(360,Math.ceil(loanInfo(top).n)):(once?36:12));H=Math.max(1,H);
@@ -1039,7 +1055,10 @@ function nextOcc(r,from){ // first occurrence on/after `from` (Date, 00:00) that
   return null;
 }
 function allReminders(){ // user reminders + automatic loan payments
-  const auto=S.loans.filter(l=>num(l.balance)>0&&num(l.payment)>0).map((l,i)=>({id:'loan'+i,auto:true,title:(l.name||LTYPE[l.type]?.[LI()]||'')+(l.bank?' · '+l.bank:''),cat:'loan',amount:num(l.payment),freq:'monthly',day:num(l.day)||1,daysBefore:3,lastPaid:(S.loanPaid||{})[i]}));
+  const lp=S.loanPaid||{},auto=[];
+  S.loans.forEach((l,i)=>{if(num(l.balance)<=0)return;const title=(l.name||LTYPE[l.type]?.[LI()]||'')+(l.bank?' · '+l.bank:'');
+    if(isTemp(l))loanPlan(l).forEach((x,k)=>auto.push({id:'loan'+i+'_'+k,auto:true,title,cat:'loan',amount:x.amount,freq:'once',date:x.date,daysBefore:3,lastPaid:lp[i+'_'+k]}));
+    else if(num(l.payment)>0)auto.push({id:'loan'+i,auto:true,title,cat:'loan',amount:num(l.payment),freq:'monthly',day:num(l.day)||1,daysBefore:3,lastPaid:lp[i]})});
   return [...auto,...remList()];
 }
 function upcoming(days=60){
@@ -1138,7 +1157,7 @@ function FC(){if(!S.scen)S.scen={events:[],infl:true,growth:0,horizon:24,target:
 
 function fcSim(events,M){
   const c=calc(),st=FC(),tax=S.set.tax/100;
-  const loans=S.loans.map(l=>({name:l.name||lab(LTYPE[l.type]||''),b:num(l.balance),r:num(l.rate)/1200,p:num(l.payment),closed:null,sched:Array.isArray(l.schedule)&&l.schedule.length?l.schedule:null}));
+  const loans=S.loans.map(l=>{const t=isTemp(l);return{name:l.name||lab(LTYPE[l.type]||''),b:num(l.balance),r:t?0:num(l.rate)/1200,p:t?0:num(l.payment),closed:null,sched:t?loanPlan(l).map(x=>({ym:x.date.slice(0,7),amount:x.amount})):(Array.isArray(l.schedule)&&l.schedule.length?l.schedule:null)}});
   const curYm=ymd(new Date()).slice(0,7),ymOf=m=>ymd(fcMonth(m)).slice(0,7);
   const accs=S.accounts.map(a=>({name:a.bank||lab(ATYPE[a.type]||''),type:a.type,b:num(a.balance),r:num(a.rate)/1200}));
   if(!accs.length)accs.push({name:T('Свободные деньги','Spare cash','Ազատ գումար'),type:'current',b:0,r:0});
@@ -1176,7 +1195,7 @@ function fcSim(events,M){
     const income=baseInc*Math.pow(1+growth,Math.floor((m-1)/12))+incD;
     const expenses=Math.max(0,baseExp*Math.pow(1+infl,(m-1)/12)+expD);
     let payments=0,interest=0;
-    const ymM=ymOf(m);for(const l of loans){if(l.b<=0.5)continue;const i=l.b*l.r;let due=l.p;if(l.sched){const lastYm=l.sched.reduce((a,x)=>x.ym>a?x.ym:a,'');due=ymM>lastYm?l.p:l.sched.filter(x=>x.ym===ymM||(m===1&&x.ym<=curYm)).reduce((a,x)=>a+num(x.amount),0)}const pay=Math.min(due,l.b+i);interest+=i;payments+=pay;l.b=l.b+i-pay;if(l.b<=0.5){l.b=0;if(!l.closed){l.closed=m;closed.push(l.name)}}}
+    const ymM=ymOf(m);for(const l of loans){if(l.b<=0.5)continue;const i=l.b*l.r;let due=l.p;if(l.sched){const lastYm=l.sched.reduce((a,x)=>x.ym>a?x.ym:a,'');due=ymM>lastYm?(l.p>0?l.p:l.b+i):l.sched.filter(x=>x.ym===ymM||(m===1&&x.ym<=curYm)).reduce((a,x)=>a+num(x.amount),0)}const pay=Math.min(due,l.b+i);interest+=i;payments+=pay;l.b=l.b+i-pay;if(l.b<=0.5){l.b=0;if(!l.closed){l.closed=m;closed.push(l.name)}}}
     for(const a of accs)if(a.b>0&&a.r>0)a.b+=a.b*a.r*(1-tax);
     const net=income-expenses-payments;
     if(net>=0)accs[main].b+=net;else withdraw(-net);
@@ -1369,7 +1388,7 @@ function impBuild(){
   const r=IMP,o=IMPopt,src='xlsx',b={loans:[],incomes:[],expenses:[],accounts:[],events:[],reminders:[]};
   if(o.debts)for(const d of r.debts){const n=Math.max(1,d.schedule.length);const rocket=/rocket|line/i.test(d.type);
     const tcl=d.type.replace(/\s*\d+[.,]?\d*\s*%/,'').replace(/,\s*$/,'').trim(),txt2=d.type+' '+d.contract,human=/[a-zа-яё]{3,}\s/i.test(d.contract)&&!/\d{5,}/.test(d.contract);
-    b.loans.push({name:human?d.contract:(tcl||T('Кредит','Loan','Վարկ'))+' · '+shortContract(d.contract),bank:rocket?'Rocket Line':(txt2.match(/ameriabank|ardshinbank|acba|inecobank|evocabank|idbank|unibank|araratbank|amio bank|fast bank|vtb|converse bank|armeconombank/i)||[''])[0],type:/ипотек|mortgage/i.test(txt2)?'mortgage':/авто|car/i.test(txt2)?'car':/карт|card|rocket|line/i.test(txt2)?'card':/микро|payday/i.test(txt2)?'short':/знаком|друг|брат|сестр|родител|friend/i.test(txt2)?'other':'consumer',balance:Math.round(d.balance*100)/100,rate:d.rate,payment:Math.ceil(d.balance/n*(1+d.rate/1200)),day:d.due?+d.due.slice(8,10):1,contract:d.contract,schedule:d.schedule,src})}
+    b.loans.push({name:human?d.contract:(tcl||T('Кредит','Loan','Վարկ'))+' · '+shortContract(d.contract),bank:rocket?'Rocket Line':(txt2.match(/ameriabank|ardshinbank|acba|inecobank|evocabank|idbank|unibank|araratbank|amio bank|fast bank|vtb|converse bank|armeconombank/i)||[''])[0],type:/ипотек|mortgage/i.test(txt2)?'mortgage':/авто|car/i.test(txt2)?'car':/карт|card|rocket|line/i.test(txt2)?'card':/микро|payday/i.test(txt2)?'short':/знаком|друг|брат|сестр|родител|friend/i.test(txt2)?'other':'consumer',balance:Math.round(d.balance*100)/100,rate:d.rate,payment:Math.ceil(d.balance/n*(1+d.rate/1200)),day:d.due?+d.due.slice(8,10):1,contract:d.contract,schedule:d.schedule,mode:d.schedule.length>1?'plan':d.schedule.length===1||d.due?'once':'monthly',due:d.schedule.length===1?ymDay(d.schedule[0].ym,d.due?+d.due.slice(8,10):1):d.schedule.length?undefined:d.due||undefined,deadline:d.due||undefined,src})}
   const s=r.settings||{};
   if(o.salary&&s.salary)b.incomes.push({name:T('Зарплата','Salary','Աշխատավարձ'),amount:s.salary,src});
   if(o.expenses)(s.expenses||[]).forEach(e=>b.expenses.push({name:e.name,cat:CATS[e.cat]?e.cat:'other',amount:e.amount,src}));
@@ -1465,7 +1484,7 @@ document.addEventListener('input',e=>{
   const k=e.target.dataset.k;if(!k)return;
   setPath(k,e.target.dataset.t==='num'?num(e.target.value):e.target.value);autoFill(k,e.target.value);save();live();
 });
-document.addEventListener('change',e=>{if(e.target.id==='impfile'&&e.target.files[0]){impUpload(e.target.files[0]);return}if(e.target.dataset.imp){IMPopt[e.target.dataset.imp]=e.target.checked;$('#impout').innerHTML=impOut();return}if(e.target.dataset.prefill){prefillPre(e.target.value);save();render();return}if(e.target.tagName==='SELECT'&&e.target.dataset.k){save();if(/^(reminders\.\d+\.freq|calc\.|scen\.events\.\d+\.type|scen\.target)/.test(e.target.dataset.k))render();else live()}});
+document.addEventListener('change',e=>{if(e.target.id==='impfile'&&e.target.files[0]){impUpload(e.target.files[0]);return}if(e.target.dataset.imp){IMPopt[e.target.dataset.imp]=e.target.checked;$('#impout').innerHTML=impOut();return}if(e.target.dataset.prefill){prefillPre(e.target.value);save();render();return}if(e.target.tagName==='SELECT'&&e.target.dataset.k){save();if(/^(reminders\.\d+\.freq|calc\.|loans\.\d+\.mode|scen\.events\.\d+\.type|scen\.target)/.test(e.target.dataset.k))render();else live()}});
 $('#cur').addEventListener('change',e=>{S.currency=e.target.value;save();render()});
 $('#lang').addEventListener('change',e=>{LANG=e.target.value;try{localStorage.setItem(KEY+'-lang',LANG)}catch(_){}translateDefaults();save();render()});
 document.addEventListener('click',e=>{

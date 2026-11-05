@@ -21,7 +21,11 @@ function summary(d) {
   const L = [];
   L.push(`  Доходы:        ${(d.incomes || []).length} шт., ${amd(sum(d.incomes, 'amount'))}/мес.`);
   L.push(`  Расходы:       ${(d.expenses || []).length} шт., ${amd(sum(d.expenses, 'amount'))}/мес.`);
-  L.push(`  Кредиты:       ${(d.loans || []).length} шт., долг ${amd(sum(d.loans, 'balance'))}, платежи ${amd(sum(d.loans, 'payment'))}/мес.`);
+  const mode = l => l.mode || (Array.isArray(l.schedule) && l.schedule.length ? (l.schedule.length === 1 ? 'once' : 'plan') : 'monthly');
+  const monthly = (d.loans || []).filter(l => mode(l) === 'monthly'), temp = (d.loans || []).filter(l => mode(l) !== 'monthly');
+  L.push(`  Кредиты:       ${(d.loans || []).length} шт., долг ${amd(sum(d.loans, 'balance'))}`);
+  L.push(`    ежемесячные: ${monthly.length} шт., платежи ${amd(sum(monthly, 'payment'))}/мес.`);
+  L.push(`    разовые / по графику: ${temp.length} шт. на ${amd(sum(temp, 'balance'))} (к конкретным датам, не каждый месяц)`);
   L.push(`  Счета:         ${(d.accounts || []).length} шт., ${amd(sum(d.accounts, 'balance'))}`);
   L.push(`  Операции:      ${(d.ops || []).length} шт.`);
   L.push(`  Напоминания:   ${(d.reminders || []).length} шт.`);
@@ -33,7 +37,8 @@ function summary(d) {
 function details(d) {
   if (!d) return '';
   const rows = [];
-  for (const l of d.loans || []) rows.push(`    🏦 ${l.name}${l.bank ? ' (' + l.bank + ')' : ''}: ${amd(l.balance)}, ${l.rate}%, ${amd(l.payment)}/мес., день ${l.day}${l.src === 'xlsx' ? '  [Excel]' : ''}`);
+  for (const l of d.loans || []) { const md = l.mode || (Array.isArray(l.schedule) && l.schedule.length ? (l.schedule.length === 1 ? 'once' : 'plan') : 'monthly');
+    rows.push(`    🏦 ${l.name}${l.bank ? ' (' + l.bank + ')' : ''}: ${amd(l.balance)}, ${l.rate}%, ` + (md === 'monthly' ? `${amd(l.payment)}/мес., день ${l.day}` : md === 'once' ? `одной суммой ${l.due || (l.schedule?.[0]?.ym || '?')}` : `по графику: ${(l.schedule || []).map(x => x.ym + ' ' + amd(x.amount)).join(', ')}`) + (l.src === 'xlsx' ? '  [Excel]' : '')); }
   for (const a of d.accounts || []) rows.push(`    💳 ${a.bank || a.type}: ${amd(a.balance)}${+a.rate ? ', ' + a.rate + '%' : ''}`);
   for (const x of d.incomes || []) rows.push(`    ➕ ${x.name}: ${amd(x.amount)}/мес.`);
   for (const x of d.expenses || []) rows.push(`    ➖ ${x.name}: ${amd(x.amount)}/мес.`);

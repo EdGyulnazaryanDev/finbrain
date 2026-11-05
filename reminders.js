@@ -20,9 +20,23 @@ function nextOcc(r, from) {
   return null;
 }
 
+// Вид погашения: каждый месяц / одной суммой к дате / по графику (как loanMode в app.js)
+const loanMode = l => l.mode || (Array.isArray(l.schedule) && l.schedule.length ? (l.schedule.length === 1 ? 'once' : 'plan') : 'monthly');
+const ymDay = (ym, day) => { const [y, m] = ym.split('-').map(Number); return ym + '-' + String(Math.min(num(day) || 1, dim(y, m - 1))).padStart(2, '0'); };
+function loanPlan(l) {
+  const md = loanMode(l);
+  if (md === 'once') { const d = l.due || (l.schedule?.length ? ymDay(l.schedule[l.schedule.length - 1].ym, l.day) : null); return d ? [{ date: d, amount: num(l.balance) }] : []; }
+  if (md === 'plan') return (l.schedule || []).map(x => ({ date: ymDay(x.ym, l.day), amount: num(x.amount) }));
+  return [];
+}
 function allReminders(data) {
-  const loans = (data.loans || []).filter(l => num(l.balance) > 0 && num(l.payment) > 0);
-  const auto = loans.map((l, i) => ({ id: 'loan' + i, title: (l.name || 'Loan') + (l.bank ? ' · ' + l.bank : ''), cat: 'loan', amount: num(l.payment), freq: 'monthly', day: num(l.day) || 1, daysBefore: 3, lastPaid: (data.loanPaid || {})[i] }));
+  const lp = data.loanPaid || {}, auto = [];
+  (data.loans || []).forEach((l, i) => {
+    if (num(l.balance) <= 0) return;
+    const title = (l.name || 'Loan') + (l.bank ? ' · ' + l.bank : '');
+    if (loanMode(l) !== 'monthly') loanPlan(l).forEach((x, k) => auto.push({ id: 'loan' + i + '_' + k, title, cat: 'loan', amount: x.amount, freq: 'once', date: x.date, daysBefore: 3, lastPaid: lp[i + '_' + k] }));
+    else if (num(l.payment) > 0) auto.push({ id: 'loan' + i, title, cat: 'loan', amount: num(l.payment), freq: 'monthly', day: num(l.day) || 1, daysBefore: 3, lastPaid: lp[i] });
+  });
   return [...auto, ...(data.reminders || []).map((r, i) => ({ ...r, id: 'u' + i }))].filter(r => r.active !== false);
 }
 
