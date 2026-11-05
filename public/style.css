@@ -186,3 +186,8 @@ nav.side .more{display:none}
   .ptitle h1{font-size:20px}
   .drow{grid-template-columns:1fr auto}.drow .bar{grid-column:span 2;order:3}
 }
+.row.off{opacity:.55}
+.card.plan .planh{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;margin-bottom:10px}
+.card.plan h3{margin:0;font-size:17px}
+.pbar{height:10px;background:var(--soft);border-radius:6px;overflow:hidden}
+.pbar>div{height:100%;background:linear-gradient(90deg,var(--c2),var(--brand));border-radius:6px}

@@ -11,7 +11,14 @@ function nextOcc(r, from) {
   const day = Math.max(1, Math.min(31, num(r.day) || 1));
   const paid = r.lastPaid ? new Date(r.lastPaid + 'T00:00:00') : null;
   const mk = (y, m) => new Date(y, m, Math.min(day, dim(y, m)));
-  const ok = d => d >= from && (!paid || d > paid);
+  const since = r.since ? new Date(r.since + 'T00:00:00') : null, until = r.until ? new Date(r.until + 'T00:00:00') : null;
+  const ok = d => d >= from && (!paid || d > paid) && (!since || d >= since) && (!until || d <= until);
+  if (r.freq === 'weekly') {
+    const a = since || from; const d = new Date(Math.max(+from, +a)); d.setHours(0, 0, 0, 0);
+    const off = ((Math.round((d - a) / 864e5) % 7) + 7) % 7; if (off) d.setDate(d.getDate() + 7 - off);
+    while (paid && d <= paid) d.setDate(d.getDate() + 7);
+    return !until || d <= until ? d : null;
+  }
   if (r.freq === 'once') { const d = r.date ? new Date(r.date + 'T00:00:00') : null; return d && (!paid || d > paid) ? d : null; }
   const step = r.freq === 'yearly' ? 12 : r.freq === 'quarterly' ? 3 : 1;
   let start = r.freq === 'monthly' ? mk(from.getFullYear(), from.getMonth() - 1) : mk(from.getFullYear() - 1, (num(r.month) || 1) - 1);
@@ -42,6 +49,13 @@ function allReminders(data) {
     const f = x.freq || 'monthly';
     if (f === 'monthly' || !(num(x.amount) > 0)) return;
     auto.push({ id: 'inc' + i, title: '💰 ' + (x.name || ''), cat: 'income', amount: num(x.amount), freq: f, day: num(x.day) || 15, month: num(x.month) || 1, date: x.date, daysBefore: 3, lastPaid: ip[i] });
+  });
+  // регулярные платежи и накопления с датой начала и окончания
+  const pp = data.planPaid || {};
+  (data.plans || []).forEach((p, i) => {
+    if (!(num(p.amount) > 0) || !p.from) return;
+    const f0 = new Date(p.from + 'T00:00:00');
+    auto.push({ id: 'plan' + i, title: (p.kind === 'save' ? '🎯 ' : '🔁 ') + (p.name || ''), cat: p.kind === 'save' ? 'save' : 'plan', amount: num(p.amount), freq: p.freq || 'monthly', day: f0.getDate(), month: f0.getMonth() + 1, since: p.from, until: p.to || '', daysBefore: 2, lastPaid: pp[i] });
   });
   return [...auto, ...(data.reminders || []).map((r, i) => ({ ...r, id: 'u' + i }))].filter(r => r.active !== false);
 }
