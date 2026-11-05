@@ -58,7 +58,7 @@ input:focus,select:focus{outline:2px solid var(--brand);border-color:transparent
 .p-good{background:rgba(16,163,127,.13);color:var(--good)} .p-warn{background:rgba(230,149,0,.14);color:var(--warn)} .p-bad{background:rgba(229,72,77,.13);color:var(--bad)}
 .tip{border-left:4px solid var(--brand);background:var(--soft);padding:10px 12px;border-radius:10px;margin:8px 0;font-size:14px}
 .tip.bad{border-color:var(--bad)} .tip.warn{border-color:var(--warn)} .tip.good{border-color:var(--good)}
-.tip b{display:block;margin-bottom:2px}
+.tip>b:first-child{display:block;margin-bottom:2px}
 details.edu{background:var(--bg);border-radius:12px;padding:8px 12px;margin-top:10px;font-size:13.5px}
 details.edu summary{cursor:pointer;font-weight:600;color:var(--brand)}
 table{width:100%;border-collapse:collapse;font-size:14px}
