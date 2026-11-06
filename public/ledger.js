@@ -186,7 +186,7 @@
           else { const i = l.b * l.r, due = l.temp ? -amt : (l.p || -amt), pay = Math.min(due, l.b + i); l.b = l.b + i - pay; take(pay, e.acc); mo.payments += pay; mo.interest += i; amt = -pay;
             if (l.b <= 0.5) { l.b = 0; l.closed = ym; mo.closed.push(l.name); } }
         } else {
-          if (e.kind === 'income' || EXP_KINDS[e.kind]) amt *= e.kind === 'income' ? fGrow : (e.kind === 'plan' ? 1 : fInfl);
+          if (e.kind === 'income' || EXP_KINDS[e.kind]) amt *= e.kind === 'income' ? fGrow : (e.kind === 'plan' || e.kind === 'yearly' || e.kind === 'tax' ? 1 : fInfl); // годовые и налоги — известные суммы, без инфляции
           if (e.kind === 'save') { const x = -amt; take(x, main); const t = e.toAcc; if (accs[t]) accs[t].b += x; else accs[main].b += x; continue; }
           if (amt > 0) accs[e.acc >= 0 && accs[e.acc] ? e.acc : main].b += amt; else take(-amt, e.acc);
           if (e.kind === 'income') mo.income += amt; else if (EXP_KINDS[e.kind]) mo.expenses -= amt; else if (e.kind === 'loan') mo.payments -= amt; else mo.one += amt;
