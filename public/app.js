@@ -659,7 +659,8 @@ function monthNow(){
       if(r.cat==='income')(done?incGot:incWait).push(it);else if(r.cat==='save')saved.push({...it,done});else(done?spent:todo).push(it);
       from=new Date(d);from.setDate(from.getDate()+1);if(r.freq==='once')break}}
   S.loans.forEach(l=>{if(isTemp(l))(l.paidLog||[]).filter(x=>x.date.slice(0,7)===ym).forEach(x=>spent.push({n:l.name||'',v:x.amount,d:new Date(x.date+'T00:00:00'),cat:'loan'}))});
-  const ops=(S.ops||[]).filter(o=>(o.date||'').slice(0,7)===ym),opsIn=ops.filter(o=>o.type==='in').reduce((a,o)=>a+o.amount,0),opsOut=ops.filter(o=>o.type==='out').reduce((a,o)=>a+o.amount,0);
+  (S.ops||[]).filter(o=>o.pending&&o.date.slice(0,7)===ym).forEach(o=>(o.type==='in'?incWait:todo).push({n:o.note||'',v:o.amount,d:new Date(o.date+'T00:00:00'),cat:o.cat}));
+  const ops=(S.ops||[]).filter(o=>!o.pending&&(o.date||'').slice(0,7)===ym),opsIn=ops.filter(o=>o.type==='in').reduce((a,o)=>a+o.amount,0),opsOut=ops.filter(o=>o.type==='out').reduce((a,o)=>a+o.amount,0);
   const living=c.needs+c.want,livingSpent=living*day/D,livingLeft=living-livingSpent;
   const sum=a=>a.reduce((s,x)=>s+x.v,0);
   const incBase=c.income,got=incBase+sum(incGot)+opsIn,wait=sum(incWait),earned=got+wait;
@@ -785,18 +786,23 @@ function findDupes(){
     ...PLANS().map((p,i)=>({w:'plans',kind:p.kind==='save'?T('накопление','saving','խնայողություն'):T('регулярный платёж','recurring payment','պարբերական վճար'),n:p.name,a:num(p.amount),f:p.freq||'monthly',key:'p'+i,save:p.kind==='save'})),
     ...S.loans.filter(l=>num(l.balance)>0&&!isTemp(l)).map((l,i)=>({w:'loans',kind:T('кредит','loan','վարկ'),n:l.name||l.bank,a:num(l.payment),f:'monthly',key:'l'+i,loan:true}))];
   const lbl=x=>`«${esc(x.n||'—')}» (${x.kind}, ${fmt(x.a)})`;
+  // разные названия с одинаковой суммой (например «Бензин» и «Еда» по 30 000) — не дубль; дубль, только если в названиях есть общее слово или одно пустое
+  const wds=v=>nm(v).split(' ').filter(w=>w.length>=4),simName=(a,b)=>!nm(a)||!nm(b)||wds(a).some(w=>wds(b).includes(w));
   for(let i=0;i<items.length;i++)for(let j=i+1;j<items.length;j++){const x=items[i],y=items[j];
     const sameName=nm(x.n)&&nm(x.n)===nm(y.n),sameAmt=eq(x.a,y.a)&&x.f===y.f;
     if((x.loan||y.loan)&&sameAmt&&!(x.loan&&y.loan&&!sameName))out.push({t:x.loan?y.w:x.w,m:T(`${lbl(x)} и ${lbl(y)} — одинаковая сумма. Платёж по кредиту уже учтён во вкладке «Кредиты», второй раз его вносить не нужно.`,`${lbl(x)} and ${lbl(y)} have the same amount. The loan payment is already counted in Loans; don’t add it again.`,`${lbl(x)} և ${lbl(y)}՝ նույն գումարը։ Վարկի վճարն արդեն հաշվված է «Վարկեր»-ում։`)});
     else if(sameName&&(sameAmt||x.w!==y.w))out.push({t:y.w,m:T(`${lbl(x)} и ${lbl(y)} — одно и то же название в двух местах. Возможно, внесено дважды.`,`${lbl(x)} and ${lbl(y)} share a name in two places. It may be entered twice.`,`${lbl(x)} և ${lbl(y)}՝ նույն անվանումը երկու տեղում։ Հնարավոր է՝ լրացված է երկու անգամ։`)});
-    else if(sameAmt&&x.w===y.w&&x.kind===y.kind&&x.a>=10000)out.push({t:x.w,m:T(`${lbl(x)} и ${lbl(y)} — одинаковые суммы. Проверьте, не дубль ли это.`,`${lbl(x)} and ${lbl(y)} have identical amounts. Check it isn’t a duplicate.`,`${lbl(x)} և ${lbl(y)}՝ նույն գումարները։ Ստուգեք՝ կրկնօրինակ չէ՞։`)});
+    else if(sameAmt&&x.w===y.w&&x.kind===y.kind&&x.a>=10000&&simName(x.n,y.n))out.push({t:x.w,m:T(`${lbl(x)} и ${lbl(y)} — одинаковые суммы. Проверьте, не дубль ли это.`,`${lbl(x)} and ${lbl(y)} have identical amounts. Check it isn’t a duplicate.`,`${lbl(x)} և ${lbl(y)}՝ նույն գումարները։ Ստուգեք՝ կրկնօրինակ չէ՞։`)});
   }
   {const pr=S.profile,car=pr.car||{},prof=[];
     if(car.has){prof.push([T('Машина: налог','Car: tax','Մեքենա՝ գույքահարկ'),car.tax,'yearly'],[T('Машина: страховка','Car: insurance','Մեքենա՝ ապահովագրություն'),car.insurance,'yearly'],[T('Машина: обслуживание','Car: service','Մեքենա՝ սպասարկում'),car.service,'yearly'],[T('Машина: бензин','Car: fuel','Մեքենա՝ վառելիք'),car.fuel,'monthly'],[T('Машина: парковка','Car: parking','Մեքենա՝ կայանատեղի'),car.parking,'monthly'])}
     (pr.kids||[]).forEach(k=>prof.push([T('Учёба ребёнка','Child’s tuition','Երեխայի ուսում'),k.tuitionYear,'yearly'],[T('Ребёнок в месяц','Child per month','Երեխա ամսական'),k.monthly,'monthly']));
     if(pr.housing)prof.push([T('Аренда','Rent','Վարձ'),pr.housing.rent,'monthly'],[T('Обслуживание жилья','Home maintenance','Բնակարանի սպասարկում'),pr.housing.maint,'monthly']);
     Object.entries(pr.util||{}).forEach(([k,v])=>prof.push([T('Коммунальные','Utilities','Կոմունալ')+' · '+k,v,'monthly']));
-    prof.filter(x=>num(x[1])>0).forEach(([n,a,f])=>{[...PLANS().filter(p=>p.kind!=='save').map(p=>({n:p.name,a:num(p.amount),f:p.freq||'monthly',w:'plans',k:T('регулярный платёж','recurring payment','պարբերական վճար')})),...S.expenses.map(e=>({n:e.name,a:num(e.amount),f:'monthly',w:'money',k:T('расход','expense','ծախս')}))].forEach(y=>{if(eq(a,y.a)&&y.f===f)out.push({t:y.w,also:['profile'],m:T(`«${esc(n)}» ${fmt(num(a))} уже указан во вкладке «Семья и жильё», и такая же сумма есть как ${y.k} «${esc(y.n||'')}». Оставьте одно: в «Семье» годовая сумма делится на 12 месяцев, а в «Регулярных» платёж стоит на свою дату и попадает в напоминания.`,`“${esc(n)}” ${fmt(num(a))} is already in Family & home, and the same amount is a ${y.k} “${esc(y.n||'')}”. Keep one: Family spreads a yearly amount over 12 months; Recurring puts it on its date with a reminder.`,`«${esc(n)}» ${fmt(num(a))} արդեն նշված է «Ընտանիք և բնակարան»-ում, և նույն գումարը կա որպես ${y.k} «${esc(y.n||'')}»։ Թողեք մեկը։`)})})});}
+    prof.filter(x=>num(x[1])>0).forEach(([n,a,f])=>{[...PLANS().filter(p=>p.kind!=='save').map(p=>({n:p.name,a:num(p.amount),f:p.freq||'monthly',w:'plans',k:T('регулярный платёж','recurring payment','պարբերական վճար')})),...S.expenses.map(e=>({n:e.name,a:num(e.amount),f:'monthly',w:'money',k:T('расход','expense','ծախս'),cat:e.cat||'other'}))].forEach(y=>{
+      // расход другой категории (еда, здоровье, одежда…) не может быть коммуналкой или машиной из «Семьи», даже если сумма совпала
+      const fit=!y.cat||y.cat==='other'||simName(n,y.n)||(y.cat==='transport'&&n.startsWith(T('Машина','Car','Մեքենա')));
+      if(fit&&eq(a,y.a)&&y.f===f)out.push({t:y.w,also:['profile'],m:T(`«${esc(n)}» ${fmt(num(a))} уже указан во вкладке «Семья и жильё», и такая же сумма есть как ${y.k} «${esc(y.n||'')}». Оставьте одно: в «Семье» годовая сумма делится на 12 месяцев, а в «Регулярных» платёж стоит на свою дату и попадает в напоминания.`,`“${esc(n)}” ${fmt(num(a))} is already in Family & home, and the same amount is a ${y.k} “${esc(y.n||'')}”. Keep one: Family spreads a yearly amount over 12 months; Recurring puts it on its date with a reminder.`,`«${esc(n)}» ${fmt(num(a))} արդեն նշված է «Ընտանիք և բնակարան»-ում, և նույն գումարը կա որպես ${y.k} «${esc(y.n||'')}»։ Թողեք մեկը։`)})})});}
   S.expenses.forEach(e=>{if(/кредит|ипотек|заём|займ|loan|mortgage|վարկ|հիփոթեք/i.test(String(e.name||''))&&S.loans.length)out.push({t:'money',m:T(`Расход «${esc(e.name)}» похож на платёж по кредиту. Если кредит есть во вкладке «Кредиты», уберите его из расходов.`,`Expense “${esc(e.name)}” looks like a loan payment. If the loan is in Loans, remove it from spending.`,`«${esc(e.name)}» ծախսը նման է վարկի վճարի։ Եթե վարկը կա «Վարկեր»-ում, հանեք ծախսերից։`)})});
   const seen={};(S.ops||[]).forEach(o=>{const k=o.type+'|'+o.date+'|'+Math.round(o.amount)+'|'+o.cat;if(seen[k])out.push({t:'ops',m:T(`Две одинаковые операции ${fdate(o.date)} на ${fmt(o.amount)}. Если это одна и та же — удалите лишнюю.`,`Two identical transactions on ${fdate(o.date)} for ${fmt(o.amount)}. If it’s the same one, delete the extra.`,`Երկու նույն գործարք ${fdate(o.date)}՝ ${fmt(o.amount)}։ Եթե նույնն է, ջնջեք ավելորդը։`)});seen[k]=1});
   (FC().events||[]).forEach(ev=>{if(ev.type!=='oneExpense'&&ev.type!=='oneIncome')return;const ym=ymd(fcMonth(Math.round(num(ev.month)))).slice(0,7),tp=ev.type==='oneExpense'?'out':'in';
@@ -846,6 +852,7 @@ function renderChrome(){
 function renderKpis(){
   const c=calc();
   $('#kpis').innerHTML=`
+  <button class="kpi kpibtn" data-t="accounts" title="${T('Сумма всех счетов. Нажмите, чтобы открыть «Счета»','Sum of all accounts. Click to open Accounts','Բոլոր հաշիվների գումարը։ Սեղմեք՝ բացելու «Հաշիվներ»')}"><div class="l">${T('Деньги сейчас','Money now','Գումար հիմա')} · ${S.accounts.filter(a=>ATYPE[a.type]?.[1]).length} ${T('счёт.','acc.','հաշ.')}</div><div class="v ${c.savings>0?'good':''}">${fmt(c.savings)}</div></button>
   <div class="kpi"><div class="l">${T('Доход в месяц','Monthly income','Ամսական եկամուտ')}</div><div class="v">${fmt(c.income)}</div></div>
   <div class="kpi"><div class="l">${T('Все расходы','Total spending','Ընդհանուր ծախսեր')}</div><div class="v">${fmt(c.spend)}</div></div>
   <div class="kpi"><div class="l">${T('Остаётся','Left over','Մնում է')}</div><div class="v ${c.fcf>=0?'good':'bad'}">${fmt(c.fcf)}</div></div>
@@ -1408,7 +1415,7 @@ async function afterLogin(){
   S=emptyState();
   try{const r=await api('/api/budget');S=normalize(r.data)}catch(_){}
   translateDefaults();
-  if(migrateRefund()|rollLoans())pushBudget();
+  if(migrateRefund()|rollLoans()|rollOps())pushBudget();
 }
 async function init(){
   try{const r=await api('/api/me');USER=r.user;AIENABLED=r.ai}catch(_){}
@@ -1828,8 +1835,11 @@ const fcLabel=m=>{const d=fcMonth(m);return MONTHSF()[d.getMonth()]+' '+d.getFul
 function FC(){if(!S.scen)S.scen={events:[],infl:true,growth:0,horizon:24,target:-1};return S.scen}
 
 function fcSim(events,M){
+  events=[...pendingOpEvents(),...(events||[])];
   const c=calc(),st=FC(),tax=S.set.tax/100;
-  const loans=S.loans.map(l=>{const t=isTemp(l);return{skip1:!t&&!!l.asOf&&ymDay(ymd(new Date()).slice(0,7),l.day)<=l.asOf,temp:t,name:l.name||lab(LTYPE[l.type]||''),b:num(l.balance),r:(t&&loanMode(l)==='once')?0:num(l.rate)/1200,p:t?0:num(l.payment),closed:null,sched:t?loanPlan(l).map(x=>({ym:x.date.slice(0,7),amount:x.amount})):(Array.isArray(l.schedule)&&l.schedule.length?l.schedule:null)}});
+  const nowYm=ymd(new Date()).slice(0,7),lpd=S.loanPaid||{};
+  // платёж этого месяца не вычитаем, если остаток введён уже после него или платёж отмечен «✓ Оплачено» в этом месяце
+  const loans=S.loans.map((l,li)=>{const t=isTemp(l);return{skip1:!t&&((!!l.asOf&&ymDay(nowYm,l.day)<=l.asOf)||String(lpd[li]||'').slice(0,7)===nowYm),temp:t,name:l.name||lab(LTYPE[l.type]||''),b:num(l.balance),r:(t&&loanMode(l)==='once')?0:num(l.rate)/1200,p:t?0:num(l.payment),closed:null,sched:t?loanPlan(l).map(x=>({ym:x.date.slice(0,7),amount:x.amount})):(Array.isArray(l.schedule)&&l.schedule.length?l.schedule:null)}});
   const curYm=ymd(new Date()).slice(0,7),ymOf=m=>ymd(fcMonth(m)).slice(0,7);
   const accs=S.accounts.map(a=>({name:a.bank||lab(ATYPE[a.type]||''),type:a.type,b:num(a.balance),r:num(a.rate)/1200}));
   if(!accs.length)accs.push({name:T('Свободные деньги','Spare cash','Ազատ գումար'),type:'current',b:0,r:0});
@@ -2032,7 +2042,7 @@ function opsOut(){
   </div>
   <div class="card"><h2>📉 ${T('Ход месяца','Month so far','Ամսվա ընթացքը')} · ${monthName(mk)}</h2>${cumSvg}<p class="sub">${T('Накопительный итог разовых операций по дням.','Running total of one-off transactions by day.','Միանվագ գործարքների կուտակային արդյունքն ըստ օրերի։')}</p></div>
   <div class="card"><h2>🧾 ${T('Журнал','Log','Մատյան')} · ${monthName(mk)}</h2>
-    ${list.length?`<div class="scroll"><table>${list.map(o=>{const cat=(opCats(o.type)[o.cat]||OP_OUT.other);const acc=S.accounts[o.acc];return `<tr><td style="white-space:nowrap;width:60px"><b>${+o.date.slice(8)} ${MONTHS()[+o.date.slice(5,7)-1]}</b></td><td>${cat[0]} ${esc(o.note||L(cat.slice(1,4)))}<br><span class="muted" style="font-size:12px">${esc(L(cat.slice(1,4)))}${o.cur!==S.currency?` · ${nf(o.orig,2)} ${o.cur}`:''}${o.acc>=0&&acc?' · '+esc(acc.bank||''):''}</span></td><td class="n"><b class="${o.type==='in'?'good':'bad'}">${o.type==='in'?'+':'−'}${fmt(o.amount)}</b></td><td style="width:40px"><button class="x" data-opdel="${o.id}">✕</button></td></tr>`}).join('')}</table></div>`:`<p class="muted">${T('В этом месяце операций нет. Запишите первую выше.','No transactions this month. Log the first one above.','Այս ամիս գործարքներ չկան։ Գրանցեք առաջինը վերևում։')}</p>`}
+    ${list.length?`<div class="scroll"><table>${list.map(o=>{const cat=(opCats(o.type)[o.cat]||OP_OUT.other);const acc=S.accounts[o.acc];return `<tr><td style="white-space:nowrap;width:60px"><b>${+o.date.slice(8)} ${MONTHS()[+o.date.slice(5,7)-1]}</b></td><td>${cat[0]} ${esc(o.note||L(cat.slice(1,4)))}<br><span class="muted" style="font-size:12px">${esc(L(cat.slice(1,4)))}${o.cur!==S.currency?` · ${nf(o.orig,2)} ${o.cur}`:''}${o.acc>=0&&acc?' · '+esc(acc.bank||''):''}${o.pending?' · <b class="warn">'+T('запланировано','planned','պլանավորված')+'</b>':''}</span></td><td class="n"><b class="${o.type==='in'?'good':'bad'}">${o.type==='in'?'+':'−'}${fmt(o.amount)}</b></td><td style="width:40px"><button class="x" data-opdel="${o.id}">✕</button></td></tr>`}).join('')}</table></div>`:`<p class="muted">${T('В этом месяце операций нет. Запишите первую выше.','No transactions this month. Log the first one above.','Այս ամիս գործարքներ չկան։ Գրանցեք առաջինը վերևում։')}</p>`}
   </div>`;
 }
 function opSave(){
@@ -2040,15 +2050,27 @@ function opSave(){
   if(amt<=0){if(m)m.textContent=T('Введите сумму.','Enter an amount.','Մուտքագրեք գումարը։');return}
   const base=Math.round(toBase(amt,d.cur)*100)/100,acc=num(d.acc);
   const op={id:Date.now(),type:d.type,amount:base,orig:amt,cur:d.cur,rate:fxRate(d.cur)/fxRate(S.currency),cat:d.cat,date:d.date||todayStr(),note:String(d.note||'').slice(0,120),acc:acc>=0&&S.accounts[acc]?acc:-1};
-  if(op.acc>=0){const a=S.accounts[op.acc];a.balance=Math.round((num(a.balance)+(op.type==='in'?base:-base))*100)/100}
-  {const li=d.loan===undefined||d.loan===''?-1:num(d.loan);if(op.type==='out'&&(op.cat==='prepay'||op.cat==='loan')&&li>=0&&S.loans[li]){const l=S.loans[li];l.balance=Math.max(0,Math.round((num(l.balance)-base)*100)/100);l.asOf=ymd(new Date());op.loan=li}}
+  {const li=d.loan===undefined||d.loan===''?-1:num(d.loan);if(op.type==='out'&&(op.cat==='prepay'||op.cat==='loan')&&li>=0&&S.loans[li])op.loan=li}
+  // дата в будущем — операция запланирована: счёт и кредит изменятся только в этот день (rollOps)
+  if(op.date>todayStr())op.pending=1;else opApply(op);
   {const ev=FC().events||[],tp=op.type==='out'?'oneExpense':'oneIncome',k=ev.findIndex(e=>e.type===tp&&ymd(fcMonth(Math.round(num(e.month)))).slice(0,7)===op.date.slice(0,7)&&Math.abs(Math.abs(num(e.amount))-base)<1);if(k>=0){ev.splice(k,1);op.replacedEv=1}}
   OPS().push(op);S.opView=monthKey(op.date);
   Object.assign(S.opDraft,{amount:0,note:'',cur:S.currency,date:todayStr()});save();render();
-  const mm=$('#opmsg');if(mm)mm.textContent='✓ '+T('Записано','Saved','Գրանցված է')+(op.acc>=0?' · '+T('баланс счёта обновлён','account balance updated','հաշվի մնացորդը թարմացվեց'):'')+(op.replacedEv?' · '+T('такое же событие убрано из прогноза','the same planned event was removed from the forecast','նույն իրադարձությունը հանվեց կանխատեսումից'):'');
+  const mm=$('#opmsg');if(mm)mm.textContent='✓ '+T('Записано','Saved','Գրանցված է')+(op.pending?' · '+T(`запланировано на ${fdate(op.date)}: счёт изменится в этот день`,`planned for ${fdate(op.date)}: the account changes on that day`,`պլանավորված է ${fdate(op.date)}-ին. հաշիվը կփոխվի այդ օրը`):op.acc>=0?' · '+T('баланс счёта обновлён','account balance updated','հաշվի մնացորդը թարմացվեց'):'')+(op.replacedEv?' · '+T('такое же событие убрано из прогноза','the same planned event was removed from the forecast','նույն իրադարձությունը հանվեց կանխատեսումից'):'');
+}
+function opApply(op){
+  if(op.acc>=0&&S.accounts[op.acc]){const a=S.accounts[op.acc];a.balance=Math.round((num(a.balance)+(op.type==='in'?op.amount:-op.amount))*100)/100}
+  if(op.loan>=0&&S.loans[op.loan]){const l=S.loans[op.loan];l.balance=Math.max(0,Math.round((num(l.balance)-op.amount)*100)/100);l.asOf=ymd(new Date())}
+}
+function rollOps(){ // наступила дата запланированной операции — списываем со счёта / уменьшаем кредит
+  const t=todayStr();let ch=false;(S.ops||[]).forEach(o=>{if(o.pending&&o.date<=t){delete o.pending;opApply(o);ch=true}});return ch;
+}
+function pendingOpEvents(){ // запланированные операции участвуют в прогнозе как разовые события своего месяца
+  return (S.ops||[]).filter(o=>o.pending).map(o=>o.loan>=0&&S.loans[o.loan]?{month:ymToMonth(o.date.slice(0,7)),type:'prepay',loan:o.loan,amount:o.amount,mode:'term'}:{month:ymToMonth(o.date.slice(0,7)),type:o.type==='in'?'oneIncome':'oneExpense',amount:o.amount,acc:o.acc,note:o.note});
 }
 function opDelete(id){
   const ops=OPS(),i=ops.findIndex(o=>String(o.id)===String(id));if(i<0)return;const o=ops[i];
+  if(o.pending){ops.splice(i,1);save();render();return}
   if(o.acc>=0&&S.accounts[o.acc]){const a=S.accounts[o.acc];a.balance=Math.round((num(a.balance)-(o.type==='in'?o.amount:-o.amount))*100)/100}
   if(o.loan>=0&&S.loans[o.loan]){const l=S.loans[o.loan];l.balance=Math.round((num(l.balance)+o.amount)*100)/100}
   ops.splice(i,1);save();render();
