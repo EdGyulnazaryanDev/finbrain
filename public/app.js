@@ -839,6 +839,9 @@ function renderChrome(){
   {const ob=$('#opbtn');if(ob)ob.textContent='➕ '+T('Операция','Transaction','Գործարք')}
   $('#aititle').textContent='🤖 '+T('AI-помощник','AI assistant','AI օգնական');$('#aiin').placeholder=T('Спросите про бюджет, кредиты, вклады…','Ask about your budget, loans, deposits…','Հարցրեք բյուջեի, վարկերի, ավանդների մասին…');aiRender();renderUser();
 }
+function autoLogTip(){ // что счета добавили или списали сами по плану
+  const n=(S.autoLog||[]).filter(x=>!x.seen);if(!n.length)return '';
+  return `<div class="tip autolog"><b>🔄 ${T('Обновлено по плану','Updated from the plan','Թարմացվել է ըստ պլանի')}:</b> ${n.slice(-8).map(x=>`${esc(x.label)} ${x.amount>=0?'+':'−'}${fmt(Math.abs(x.amount))} (${fdate(x.date)})`).join(', ')}${n.length>8?' …':''}. ${T('Если что-то пришло не так — поправьте остаток.','If something came in differently, correct the balance.','Եթե ինչ-որ բան այլ կերպ է եկել, ուղղեք մնացորդը։')} <button class="linkbtn" data-autolog="1">✕</button></div>`}
 function renderKpis(){
   const c=calc();
   $('#kpis').innerHTML=`
@@ -1405,7 +1408,7 @@ async function afterLogin(){
   S=emptyState();
   try{const r=await api('/api/budget');S=normalize(r.data);REV=r.rev||0}catch(_){}
   translateDefaults();
-  if(migrateRefund()|rollLoans()|rollOps())pushBudget();
+  if(migrateRefund()|rollLoans()|rollOps()|Ledger.rollAccounts(S,{today:todayStr(),T,fx:c=>fxRate(c)/fxRate(S.currency)}).changed)pushBudget();
 }
 async function init(){
   try{const r=await api('/api/me');USER=r.user;AIENABLED=r.ai}catch(_){}
@@ -2155,7 +2158,7 @@ function render(){
     if(AUTH==='out'){authMode=authMode||'login';openAuth();$('#authmodal').classList.add('gate')}
     return}
   const v={home:vHome,plans:vPlans,taxes:vTaxes,profile:()=>vProfile()+dataCard(),money:vMoney,accounts:vAccounts,loans:vLoans,market:vMarket,analytics:vAnalytics,ops:vOps,forecast:vForecast,advice:vAdvice,calc:vCalc,reminders:vRem}[tab]||vHome;
-  $('#view').innerHTML=pageHead(tab)+(GUIDE.some(g=>g[0]===tab)?whereCard(tab)+dupesCard(tab):tab==='home'?dupesCard():tab==='forecast'||tab==='profile'?dupesCard(tab):'')+(tab==='home'||tab==='ops'?`<div id="monthout">${monthCard()}</div>`:'')+`<div id="brainout">${brainCard(tab,tab==='advice'?0:tab==='home'?4:3)}</div>`+v()+(tab==='loans'&&S.loans.length?rollNote():'');
+  $('#view').innerHTML=pageHead(tab)+(tab==='home'||tab==='accounts'?autoLogTip():'')+(GUIDE.some(g=>g[0]===tab)?whereCard(tab)+dupesCard(tab):tab==='home'?dupesCard():tab==='forecast'||tab==='profile'?dupesCard(tab):'')+(tab==='home'||tab==='ops'?`<div id="monthout">${monthCard()}</div>`:'')+`<div id="brainout">${brainCard(tab,tab==='advice'?0:tab==='home'?4:3)}</div>`+v()+(tab==='loans'&&S.loans.length?rollNote():'');
   if(tab==='reminders')renderTg();
   live();
 }
@@ -2184,6 +2187,7 @@ document.addEventListener('input',e=>{
   const k=e.target.dataset.k;if(!k)return;
   setPath(k,e.target.dataset.t==='num'?num(e.target.value):e.target.value);autoFill(k,e.target.value);
   {const m=/^loans\.(\d+)\.(balance|schedule)/.exec(k);if(m&&S.loans[+m[1]])S.loans[+m[1]].asOf=ymd(new Date())}
+  {const m=/^accounts\.(\d+)\.balance$/.exec(k);if(m&&S.accounts[+m[1]])S.accounts[+m[1]].asOf=ymd(new Date())} // ручной остаток — точка отсчёта для rollAccounts
   {const m=/^plans\.(\d+)\.from$/.exec(k),p=m&&PLANS()[+m[1]];if(p&&num(p.months)>0&&p.from)planDur(+m[1],num(p.months))}
   {const m=/^plans\.(\d+)\.to$/.exec(k),p=m&&PLANS()[+m[1]];if(p)p.months=0}
   save();live();
@@ -2208,6 +2212,7 @@ document.addEventListener('click',e=>{
   if(b.dataset.ev!==undefined){const f=addEvent(+b.dataset.ev);save();render();const el=document.querySelector(`[data-k="${f}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.op==='save'){opSave();return}
   if(b.dataset.opdel){opDelete(b.dataset.opdel);return}
+  if(b.dataset.autolog){(S.autoLog||[]).forEach(x=>x.seen=true);save();render();return}
   if(b.dataset.opq!==undefined){const f=opQuick(+b.dataset.opq);save();render();const el=document.querySelector(`[data-k="${f}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.impgo!==undefined){if(b.dataset.impgo==='1')impApply();else{IMP=null;IMPmsg='';render()}return}
   if(b.id==='opbtn'){tab='ops';try{localStorage.setItem(KEY+'-tab',tab)}catch(_){}render();window.scrollTo({top:0,behavior:'smooth'});setTimeout(()=>$('[data-k="opDraft.amount"]')?.focus(),250);return}

@@ -107,3 +107,38 @@ test('project: укладывается в 30 мс на 24 месяца', () => 
   t.sort((a, c) => a - c);
   assert.ok(t[2] < 30, 'медиана ' + t[2].toFixed(1) + ' мс');
 });
+
+const small = () => ({ profile: {}, set: { tax: 10, infl: 0 }, scen: { events: [] },
+  accounts: [{ type: 'current', balance: 100000, rate: 0, asOf: '2026-11-01' }],
+  incomes: [{ name: 'Salary', amount: 900000, freq: 'monthly', day: 5 }],
+  loans: [{ name: 'Loan', type: 'consumer', balance: 1000000, rate: 12, payment: 50000, day: 3, mode: 'monthly' }] });
+
+test('rollAccounts: зарплата 5-го и платёж 3-го догоняют остаток', () => {
+  const b = small(), r = L.rollAccounts(b, { today: TODAY });
+  assert.strictEqual(r.changed, true);
+  assert.strictEqual(b.accounts[0].balance, 100000 + 900000 - 50000);
+  assert.strictEqual(b.accounts[0].asOf, TODAY);
+  assert.deepStrictEqual(r.log.map(x => [x.date, x.amount, x.label]), [['2026-11-03', -50000, 'Loan'], ['2026-11-05', 900000, 'Salary']]);
+  assert.strictEqual(b.autoLog.length, 2);
+});
+
+test('rollAccounts: второй раз в тот же день ничего не меняет', () => {
+  const b = small(); L.rollAccounts(b, { today: TODAY });
+  const r = L.rollAccounts(b, { today: TODAY });
+  assert.strictEqual(r.changed, false);
+  assert.strictEqual(b.accounts[0].balance, 950000);
+});
+
+test('rollAccounts: платёж, отмеченный оплаченным, не списывается', () => {
+  const b = small(); b.loanPaid = { 0: '2026-11-02' };
+  L.rollAccounts(b, { today: TODAY });
+  assert.strictEqual(b.accounts[0].balance, 1000000);
+});
+
+test('rollAccounts: счёт без даты получает сегодняшнюю и не меняется', () => {
+  const b = small(); delete b.accounts[0].asOf;
+  const r = L.rollAccounts(b, { today: TODAY });
+  assert.strictEqual(b.accounts[0].balance, 100000);
+  assert.strictEqual(b.accounts[0].asOf, TODAY);
+  assert.strictEqual(r.log.length, 0);
+});

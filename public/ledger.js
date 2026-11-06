@@ -210,7 +210,38 @@
     return out;
   }
 
-  const Ledger = { project, annuity, num, ymd, dim, ymDay, addDays, ymAdd, ymDiff, parse, loanMode, isTemp, loanDue, loanPlan, activeIn, incFreq, quarterMonths, incomeInMonth, planOccIn, bizAmounts, buildEntries, sortEntries };
+  /* ---- счета догоняют план: всё, что по плану прошло после ввода остатка ---- */
+  // Не трогает: операции (их проводит rollOps), события прогноза (это «что если»), смену ставок.
+  const ROLL_SKIP = { op: 1, event: 1, rate: 1 };
+  function rollAccounts(b, opts) {
+    const today = opts.today, T = opts.T || (r => r), accs = b.accounts || [], log = [];
+    let changed = false;
+    accs.forEach(a => { if (!a.asOf) { a.asOf = today; changed = true; } });
+    const live = accs.map((a, i) => i).filter(i => accs[i].type !== 'invest');
+    const from = accs.reduce((m, a) => a.asOf < m ? a.asOf : m, today);
+    if (from < today && live.length) {
+      const order = live.slice().sort((x, y) => (ORDER[accs[x].type] ?? 5) - (ORDER[accs[y].type] ?? 5));
+      let main = num((b.scen || {}).target); if (!(main >= 0 && accs[main] && accs[main].type !== 'invest')) main = order[0];
+      const latest = live.reduce((m, i) => accs[i].asOf > m ? accs[i].asOf : m, '');
+      const take = (x, from) => { let left = x; const seq = from >= 0 && accs[from] ? [from, ...order.filter(i => i !== from)] : order;
+        for (const i of seq) { if (left <= 0) break; const t = Math.min(Math.max(0, num(accs[i].balance)), left); accs[i].balance = num(accs[i].balance) - t; left -= t; } if (left > 0) accs[main].balance = num(accs[main].balance) - left; };
+      let living = 0, livingDays = 0;
+      for (const e of buildEntries(b, { ...opts, from, to: today })) {
+        if (ROLL_SKIP[e.kind]) continue;
+        const target = e.acc >= 0 && accs[e.acc] ? e.acc : e.amount > 0 ? main : -1;
+        if (e.date <= (target >= 0 ? accs[target].asOf : latest)) continue; // уже было в остатке, который ввёл пользователь
+        if (e.kind === 'save') { take(-e.amount, main); if (accs[e.toAcc]) accs[e.toAcc].balance = num(accs[e.toAcc].balance) - e.amount; continue; }
+        if (e.amount > 0) accs[target].balance = num(accs[target].balance) + e.amount; else take(-e.amount, e.acc);
+        if (e.kind === 'living') { living += e.amount; livingDays++; } else log.push({ date: e.date, amount: e.amount, label: e.label, acc: target });
+      }
+      if (living) log.push({ date: today, amount: Math.round(living), label: T(`Жизнь за ${livingDays} дн.`, `Living costs, ${livingDays} days`, `Կենցաղ՝ ${livingDays} օր`), acc: -1 });
+      accs.forEach(a => { a.balance = Math.round(num(a.balance) * 100) / 100; if (a.asOf < today) { a.asOf = today; changed = true; } });
+      if (log.length) { b.autoLog = [...(b.autoLog || []), ...log.map(x => ({ ...x, seen: false }))].slice(-100); changed = true; }
+    }
+    return { changed, log };
+  }
+
+  const Ledger = { project, rollAccounts, annuity, num, ymd, dim, ymDay, addDays, ymAdd, ymDiff, parse, loanMode, isTemp, loanDue, loanPlan, activeIn, incFreq, quarterMonths, incomeInMonth, planOccIn, bizAmounts, buildEntries, sortEntries };
   root.Ledger = Ledger;
   if (typeof module !== 'undefined' && module.exports) module.exports = Ledger;
 })(typeof window !== 'undefined' ? window : globalThis);
