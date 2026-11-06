@@ -148,3 +148,42 @@ test('buildEntries: событие прогноза на текущий меся
   const e = entries(b).filter(x => x.label === 'Now');
   assert.deepStrictEqual(e.map(x => [x.date, x.amount]), [['2026-11-07', -50000]]);
 });
+
+const withOp = (b, amount, date, extra = {}) => { const a = JSON.parse(JSON.stringify(b)); a.ops.push({ id: 99, type: amount < 0 ? 'out' : 'in', amount: Math.abs(amount), cat: 'other', date, acc: 1, pending: 1, note: 'Test', ...extra }); return a; };
+const verdict = (b, a) => L.verdict(b, a, { today: TODAY });
+
+test('verdict: трата 300 000 на 10 ноября — нельзя, 16 ноября не хватит на ипотеку', () => {
+  const b = fixture(), v = verdict(b, withOp(b, -300000, '2026-11-10'));
+  // 1 380 000 − жизнь 7–16 нояб. (10 дн. × 3 233,33) − коммуналка 38 500 − 300 000 − ремонт 700 000 − ВТБ 154 302,6 − ипотека 378 612 = −223 748
+  assert.strictEqual(v.level, 'no');
+  assert.strictEqual(v.firstShort.date, '2026-11-16');
+  assert.strictEqual(v.firstShort.entry.kind, 'loan');
+  near(v.firstShort.short, 223748, 1000, 'нехватка');
+});
+
+test('verdict: небольшая трата, когда денег хватает, — не «нельзя»', () => {
+  const b = fixture(); b.scen.events = []; // без подарков декабрь сходится
+  const v = verdict(b, withOp(b, -10000, '2026-11-10'));
+  assert.notStrictEqual(v.level, 'no');
+});
+
+test('verdict: если и без траты в декабре не хватает, даже небольшая трата — «нельзя», и это сказано', () => {
+  const b = fixture(), v = verdict(b, withOp(b, -10000, '2026-11-10'));
+  assert.strictEqual(v.level, 'no');
+  assert.ok(v.reasons.some(r => r.code === 'short' && r.worse), 'отмечено, что трата усугубляет уже существующую нехватку');
+});
+
+test('verdict: для «нельзя» ищется месяц, когда можно', () => {
+  const b = fixture(); b.scen.events = [];
+  const v = verdict(b, withOp(b, -300000, '2026-11-10'));
+  assert.strictEqual(v.level, 'no');
+  assert.match(v.waitUntil, /^20\d\d-\d\d$/);
+  assert.ok(v.waitUntil > '2026-11');
+  const later = withOp(b, -300000, v.waitUntil + '-10');
+  assert.notStrictEqual(verdict(b, later).level, 'no', 'в найденном месяце действительно не «нельзя»');
+});
+
+test('verdict: доход — можно', () => {
+  const b = fixture(); b.scen.events = [];
+  assert.strictEqual(verdict(b, withOp(b, 100000, '2026-11-10')).level, 'ok');
+});

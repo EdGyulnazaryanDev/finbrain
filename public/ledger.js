@@ -241,7 +241,66 @@
     return { changed, log };
   }
 
-  const Ledger = { project, rollAccounts, annuity, num, ymd, dim, ymDay, addDays, ymAdd, ymDiff, parse, loanMode, isTemp, loanDue, loanPlan, activeIn, incFreq, quarterMonths, incomeInMonth, planOccIn, bizAmounts, buildEntries, sortEntries };
+  /* ---- вердикт финансиста: сравниваем «до» и «после» ---- */
+  const J = x => JSON.stringify(x);
+  const shiftDate = (ds, k) => { const ym = ymAdd(ds.slice(0, 7), k); return ymDay(ym, +ds.slice(8)); };
+  // Что в «после» новое или изменённое по сравнению с «до»: операции, события прогноза, регулярные платежи.
+  function changes(before, after) {
+    const bo = new Map((before.ops || []).map(o => [String(o.id), J(o)]));
+    const be = ((before.scen || {}).events || []).map(J), bp = (before.plans || []).map(J);
+    return {
+      ops: (after.ops || []).map((o, i) => ({ o, i })).filter(({ o }) => bo.get(String(o.id)) !== J(o)),
+      events: ((after.scen || {}).events || []).map((o, i) => ({ o, i })).filter(({ o, i }) => be[i] !== J(o)),
+      plans: (after.plans || []).map((o, i) => ({ o, i })).filter(({ o, i }) => bp[i] !== J(o)),
+    };
+  }
+  function shift(before, after, k) { // те же изменения, но на k месяцев позже
+    const s = JSON.parse(J(after)), c = changes(before, after);
+    c.ops.forEach(({ i }) => { const o = s.ops[i]; o.date = shiftDate(o.date, k); });
+    c.events.forEach(({ i }) => { const e = s.scen.events[i]; if (e.date) e.date = shiftDate(e.date, k); else e.month = (Math.round(num(e.month)) || 1) + k; });
+    c.plans.forEach(({ i }) => { const p = s.plans[i]; if (p.from) p.from = shiftDate(p.from, k); if (p.to) p.to = shiftDate(p.to, k); });
+    return s;
+  }
+  function splitInto(before, after, n) { // одна разовая трата → n равных частей по месяцам
+    const s = JSON.parse(J(after)), c = changes(before, after);
+    if (c.ops.length === 1 && !c.events.length) { const { o, i } = c.ops[0]; s.ops.splice(i, 1);
+      for (let k = 0; k < n; k++) s.ops.push({ ...o, id: String(o.id) + '_' + k, amount: num(o.amount) / n, date: shiftDate(o.date, k), pending: 1 }); return s; }
+    if (c.events.length === 1 && !c.ops.length && c.events[0].o.type === 'oneExpense') { const { o, i } = c.events[0]; s.scen.events.splice(i, 1);
+      for (let k = 0; k < n; k++) s.scen.events.push({ ...o, amount: num(o.amount) / n, month: (Math.round(num(o.month)) || 1) + k, ...(o.date ? { date: shiftDate(o.date, k) } : {}) }); return s; }
+    return null;
+  }
+  function verdict(before, after, opts) {
+    const T = opts.T || (r => r), fmt = opts.fmt || (n => Math.round(n).toLocaleString('ru-RU') + ' ֏'), fdate = opts.fdate || (d => d);
+    const pb = opts._pb || project(before, opts), pa = project(after, opts), R = opts.reserve ?? num((before.set || {}).reserve);
+    const reasons = [];
+    const deeper = pa.low && pb.low && pa.low.value < pb.low.value - 1;
+    const short = pa.firstShort && (!pb.firstShort || pa.firstShort.date < pb.firstShort.date || (deeper && pa.low.value < 0));
+    if (short) { const f = pa.firstShort, worse = !!pb.firstShort;
+      reasons.push({ code: 'short', worse, text: worse
+        ? T(`И без этого ${fdate(pb.firstShort.date)} не хватает ${fmt(pb.firstShort.short)}. С этим станет хуже: ${fdate(f.date)} не хватит ${fmt(f.short)} на «${f.entry.label}».`, `Even without this you are short ${fmt(pb.firstShort.short)} on ${fdate(pb.firstShort.date)}. With it: ${fmt(f.short)} short on ${fdate(f.date)} for “${f.entry.label}”.`, `Առանց սրա էլ ${fdate(pb.firstShort.date)}-ին պակասում է ${fmt(pb.firstShort.short)}։ Սրանով՝ ${fdate(f.date)}-ին չի բավականացնի ${fmt(f.short)}՝ «${f.entry.label}»-ի համար։`)
+        : T(`${fdate(f.date)} не хватит ${fmt(f.short)} на «${f.entry.label}».`, `On ${fdate(f.date)} you will be ${fmt(f.short)} short for “${f.entry.label}”.`, `${fdate(f.date)}-ին չի բավականացնի ${fmt(f.short)}՝ «${f.entry.label}»-ի համար։`) }); }
+    if (!short && pa.low && pa.low.value < R && deeper) reasons.push({ code: 'reserve', text: T(`${fdate(pa.low.date)} на счетах останется ${fmt(pa.low.value)} — меньше подушки ${fmt(R)}.`, `On ${fdate(pa.low.date)} your accounts drop to ${fmt(pa.low.value)}, below the ${fmt(R)} cushion.`, `${fdate(pa.low.date)}-ին հաշիվներում կմնա ${fmt(pa.low.value)}՝ բարձից (${fmt(R)}) պակաս։`) });
+    pa.goals.forEach(g => { const g0 = pb.goals.find(x => x.i === g.i); if (!g0) return;
+      if ((g0.ok && !g.ok) || g.lateMonths > g0.lateMonths) reasons.push({ code: 'goal', text: isFinite(g.lateMonths) && g.lateMonths > 0
+        ? T(`«${g.name}» к ${fdate(g.due)} не успеете: соберёте ${fmt(g.atDue)} из ${fmt(g.goal)}, цель сдвинется на ${g.lateMonths} мес.`, `“${g.name}” won’t be ready by ${fdate(g.due)}: ${fmt(g.atDue)} of ${fmt(g.goal)}, ${g.lateMonths} mo late.`, `«${g.name}»-ը ${fdate(g.due)}-ին չի հասցնի՝ ${fmt(g.atDue)}/${fmt(g.goal)}, ուշացում ${g.lateMonths} ամիս։`)
+        : T(`«${g.name}» к ${fdate(g.due)} не успеете: соберёте ${fmt(g.atDue)} из ${fmt(g.goal)}.`, `“${g.name}” won’t be ready by ${fdate(g.due)}: ${fmt(g.atDue)} of ${fmt(g.goal)}.`, `«${g.name}»-ը ${fdate(g.due)}-ին չի հասցնի՝ ${fmt(g.atDue)}/${fmt(g.goal)}։`) }); });
+    const c = changes(before, after), months = new Set([...c.ops.map(x => x.o.date.slice(0, 7)), ...c.events.map(x => x.o.date ? x.o.date.slice(0, 7) : ymAdd(opts.today.slice(0, 7), (Math.round(num(x.o.month)) || 1) - 1))]);
+    if (months.size) { const heavy = buildEntries(after, { ...opts, from: opts.today, to: addDays(opts.today, 730) }).filter(e => months.has(e.date.slice(0, 7)) && (e.kind === 'yearly' || (e.kind === 'tax' && (e.src.k === 'tax' || e.src.k === 'year'))));
+      heavy.forEach(e => reasons.push({ code: 'heavyMonth', text: T(`В этом месяце ещё ${e.label}: ${fmt(-e.amount)}.`, `This month also has ${e.label}: ${fmt(-e.amount)}.`, `Այս ամսին նաև ${e.label}՝ ${fmt(-e.amount)}։`) })); }
+    const level = short ? 'no' : reasons.length ? 'warn' : 'ok';
+    const title = level === 'ok' ? T(`Можно. Самая низкая точка — ${fdate(pa.low ? pa.low.date : opts.today)}: останется ${fmt(pa.low ? pa.low.value : 0)}.`, `You can. Lowest point: ${fdate(pa.low ? pa.low.date : opts.today)}, ${fmt(pa.low ? pa.low.value : 0)} left.`, `Կարելի է։ Ամենացածր կետը՝ ${fdate(pa.low ? pa.low.date : opts.today)}, կմնա ${fmt(pa.low ? pa.low.value : 0)}։`)
+      : reasons[0].text;
+    let waitUntil = null, split = null;
+    if (level !== 'ok' && opts.search !== false) {
+      const o2 = { ...opts, search: false, _pb: pb }; let warnAt = null;
+      for (let k = 1; k <= 24 && !waitUntil; k++) { const s = shift(before, after, k), lv = verdict(before, s, o2).level; const ym = ymAdd([...months][0] || opts.today.slice(0, 7), k); if (lv === 'ok') waitUntil = ym; else if (lv === 'warn' && !warnAt) warnAt = ym; }
+      if (!waitUntil && level === 'no') waitUntil = warnAt;
+      for (let n = 2; n <= 12 && !split; n++) { const s = splitInto(before, after, n); if (!s) break; const lv = verdict(before, s, o2).level; if (lv === 'ok' || (level === 'no' && lv === 'warn')) { const one = changes(before, after); const amt = num((one.ops[0] || one.events[0]).o.amount); split = { n, each: Math.round(amt / n) }; } }
+    }
+    return { level, title, reasons, low: pa.low, firstShort: pa.firstShort, waitUntil, split, before: pb, after: pa };
+  }
+
+  const Ledger = { project, rollAccounts, verdict, shift, changes, annuity, num, ymd, dim, ymDay, addDays, ymAdd, ymDiff, parse, loanMode, isTemp, loanDue, loanPlan, activeIn, incFreq, quarterMonths, incomeInMonth, planOccIn, bizAmounts, buildEntries, sortEntries };
   root.Ledger = Ledger;
   if (typeof module !== 'undefined' && module.exports) module.exports = Ledger;
 })(typeof window !== 'undefined' ? window : globalThis);

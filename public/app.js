@@ -2019,7 +2019,7 @@ function vOps(){
       ${inp('opDraft.note',T('Комментарий','Note','Մեկնաբանություն'),'str')}
     </div><div id="opconv">${conv}</div>
     <div class="qchips"><span class="muted">${T('Быстро:','Quick:','Արագ՝')}</span>${OP_QUICK.map((q,i)=>`<button class="chip" data-opq="${i}">${q[0]==='in'?'➕':'➖'} ${q[2]} ${esc(L(q.slice(3,6)))}</button>`).join('')}</div>
-    <div class="btns"><button class="btn" data-op="save">✓ ${T('Записать','Save','Գրանցել')}</button></div><p id="opmsg" class="sub"></p>
+    <div id="opverdict"></div><div class="btns"><button class="btn" data-op="save">✓ ${T('Записать','Save','Գրանցել')}</button></div><p id="opmsg" class="sub"></p>
   </div><div id="opsout"></div>`;
 }
 function opConv(){const d=S.opDraft;if(!d||d.cur===S.currency||!(num(d.amount)>0))return '';return `<p class="sub" style="margin:6px 0 0">≈ <b>${fmt(toBase(num(d.amount),d.cur))}</b> ${T('по курсу','at','փոխարժեքով')} 1 ${d.cur} = ${nf(fxRate(d.cur)/fxRate(S.currency),4)} ${S.currency}${(typeof MK!=='undefined'&&MK?.fx?.date)?` (${T('ЦБ','CBA','ԿԲ')}, ${fdate(MK.fx.date)})`:''}</p>`}
@@ -2059,12 +2059,29 @@ function opsOut(){
     ${list.length?`<div class="scroll"><table>${list.map(o=>{const cat=(opCats(o.type)[o.cat]||OP_OUT.other);const acc=S.accounts[o.acc];return `<tr><td style="white-space:nowrap;width:60px"><b>${+o.date.slice(8)} ${MONTHS()[+o.date.slice(5,7)-1]}</b></td><td>${cat[0]} ${esc(o.note||L(cat.slice(1,4)))}<br><span class="muted" style="font-size:12px">${esc(L(cat.slice(1,4)))}${o.cur!==S.currency?` · ${nf(o.orig,2)} ${o.cur}`:''}${o.acc>=0&&acc?' · '+esc(acc.bank||''):''}${o.pending?' · <b class="warn">'+T('запланировано','planned','պլանավորված')+'</b>':''}</span></td><td class="n"><b class="${o.type==='in'?'good':'bad'}">${o.type==='in'?'+':'−'}${fmt(o.amount)}</b></td><td style="width:40px"><button class="x" data-opdel="${o.id}">✕</button></td></tr>`}).join('')}</table></div>`:`<p class="muted">${T('В этом месяце операций нет. Запишите первую выше.','No transactions this month. Log the first one above.','Այս ամիս գործարքներ չկան։ Գրանցեք առաջինը վերևում։')}</p>`}
   </div>`;
 }
+function opFromDraft(d){ // операция из черновика формы (без побочных эффектов)
+  const amt=num(d.amount),base=Math.round(toBase(amt,d.cur)*100)/100,acc=num(d.acc);
+  const op={id:Date.now(),type:d.type,amount:base,orig:amt,cur:d.cur,rate:fxRate(d.cur)/fxRate(S.currency),cat:d.cat,date:d.date||todayStr(),note:String(d.note||'').slice(0,120),acc:acc>=0&&S.accounts[acc]?acc:-1};
+  {const li=d.loan===undefined||d.loan===''?-1:num(d.loan);if(op.type==='out'&&(op.cat==='prepay'||op.cat==='loan')&&li>=0&&S.loans[li])op.loan=li}
+  return op}
+function opPreview(d){ // состояние «после» для вердикта: операция как запланированная (сегодняшняя и прошлая — на завтра)
+  const a=structuredClone(S),op=opFromDraft(d);op.id='draft';op.pending=1;if(op.date<=todayStr())op.date=Ledger.addDays(todayStr(),1);if(!op.note)op.note=L((opCats(op.type)[op.cat]||OP_OUT.other).slice(1,4));(a.ops=a.ops||[]).push(op);return a}
+function verdictHtml(v){ // панель вердикта: можно / можно, но / нельзя
+  if(!v)return '';const cls=v.level==='ok'?'good':v.level==='warn'?'warn':'bad',ic=v.level==='ok'?'✅':v.level==='warn'?'⚠️':'❌';
+  const more=v.reasons.slice(v.level==='ok'?0:1).map(r=>`<li>${esc(r.text)}</li>`).join('');
+  const mn=ym=>MONTHSF()[+ym.slice(5)-1]+' '+ym.slice(0,4);
+  const ways=[v.waitUntil?T(`подождите до: ${mn(v.waitUntil)}`,`wait until ${mn(v.waitUntil)}`,`սպասեք մինչև ${mn(v.waitUntil)}`):'',v.split?T(`или разбейте на ${v.split.n} платежа(ей) по ${fmt(v.split.each)} в месяц`,`or split into ${v.split.n} monthly payments of ${fmt(v.split.each)}`,`կամ բաժանեք ${v.split.n} ամսական վճարի՝ ${fmt(v.split.each)}`):''].filter(Boolean);
+  return `<div class="verdict ${cls}"><b>${ic} ${esc(v.title)}</b>${more?`<ul>${more}</ul>`:''}${ways.length?`<div class="ways">💡 ${ways.join(' · ')}</div>`:''}</div>`}
+function vOpts(){return{...LG.opts(),fmt,fdate}}
+let VTIMER=null;
+function opVerdictLive(){const el=$('#opverdict');if(!el)return;clearTimeout(VTIMER);VTIMER=setTimeout(()=>{const d=S.opDraft;if(!(num(d.amount)>0)){el.innerHTML='';opBtnLabel(null);return}
+  const v=Ledger.verdict(S,opPreview(d),vOpts());el.innerHTML=verdictHtml(v);opBtnLabel(v)},250)}
+function opBtnLabel(v){const b=document.querySelector('[data-op="save"]');if(b)b.textContent=v&&v.level==='no'?'⚠️ '+T('Всё равно записать','Save anyway','Միևնույն է գրանցել'):'✓ '+T('Записать','Save','Գրանցել')}
 function opSave(){
   const d=S.opDraft,amt=num(d.amount);const m=$('#opmsg');
   if(amt<=0){if(m)m.textContent=T('Введите сумму.','Enter an amount.','Մուտքագրեք գումարը։');return}
-  const base=Math.round(toBase(amt,d.cur)*100)/100,acc=num(d.acc);
-  const op={id:Date.now(),type:d.type,amount:base,orig:amt,cur:d.cur,rate:fxRate(d.cur)/fxRate(S.currency),cat:d.cat,date:d.date||todayStr(),note:String(d.note||'').slice(0,120),acc:acc>=0&&S.accounts[acc]?acc:-1};
-  {const li=d.loan===undefined||d.loan===''?-1:num(d.loan);if(op.type==='out'&&(op.cat==='prepay'||op.cat==='loan')&&li>=0&&S.loans[li])op.loan=li}
+  const base=Math.round(toBase(amt,d.cur)*100)/100;
+  const op=opFromDraft(d);
   // дата в будущем — операция запланирована: счёт и кредит изменятся только в этот день (rollOps)
   if(op.date>todayStr())op.pending=1;else opApply(op);
   {const ev=FC().events||[],tp=op.type==='out'?'oneExpense':'oneIncome',k=ev.findIndex(e=>e.type===tp&&ymd(fcMonth(Math.round(num(e.month)))).slice(0,7)===op.date.slice(0,7)&&Math.abs(Math.abs(num(e.amount))-base)<1);if(k>=0){ev.splice(k,1);op.replacedEv=1}}
@@ -2193,6 +2210,7 @@ function live(){
   if($('#nlout'))$('#nlout').innerHTML=nlOut();
   if($('#calcout'))$('#calcout').innerHTML=calcOut();
   if($('#opsout'))$('#opsout').innerHTML=opsOut();
+  opVerdictLive();
   if($('#opconv'))$('#opconv').innerHTML=opConv();
   if($('#fcout'))$('#fcout').innerHTML=fcOut();
   if($('#remout'))$('#remout').innerHTML=remOut();
