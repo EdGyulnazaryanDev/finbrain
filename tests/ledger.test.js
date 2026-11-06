@@ -211,3 +211,64 @@ test('verdict: трата сдвигает цель — «можно, но» с 
   assert.strictEqual(v.after.goals[0].ok, false);
   near(v.after.goals[0].atDue, atDue - 300000, 15000, 'к сроку соберётся на 300 000 меньше (± проценты на эти деньги за 13 мес.)');
 });
+
+test('canSpendNow: сегодняшняя трата больше, чем на счёте, невозможна', () => {
+  const b = fixture(); // на счёте 1 лежит 1 300 000, всего 1 380 000
+  const op = { type: 'out', amount: 10000000, date: TODAY, acc: 1 };
+  const r = L.canSpendNow(b, op, { today: TODAY });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.available, 1300000);
+  assert.strictEqual(L.canSpendNow(b, { ...op, amount: 1300000 }, { today: TODAY }).ok, true);
+});
+
+test('canSpendNow: без выбранного счёта считается всё, что есть; будущая трата не проверяется', () => {
+  const b = fixture();
+  assert.strictEqual(L.canSpendNow(b, { type: 'out', amount: 1400000, date: TODAY, acc: -1 }, { today: TODAY }).ok, false);
+  assert.strictEqual(L.canSpendNow(b, { type: 'out', amount: 1380000, date: TODAY, acc: -1 }, { today: TODAY }).ok, true);
+  assert.strictEqual(L.canSpendNow(b, { type: 'out', amount: 10000000, date: '2026-12-01', acc: 1 }, { today: TODAY }).ok, true);
+  assert.strictEqual(L.canSpendNow(b, { type: 'in', amount: 10000000, date: TODAY, acc: 1 }, { today: TODAY }).ok, true);
+});
+
+/* ---- по итогам ревью ---- */
+test('ревью #2: новая отдельная нехватка при уже существующей — «нельзя»', () => {
+  const b = fixture(); // и так не хватает 22 декабря
+  const v = L.verdict(b, withOp(b, -840000, '2027-03-10'), { today: TODAY, reserve: 0 });
+  assert.strictEqual(v.level, 'no');
+  assert.ok(v.reasons.some(r => r.code === 'short'));
+});
+
+test('ревью #3: «тяжёлый месяц» — только когда платёж больше подушки и не размазанный', () => {
+  const b = { profile: { car: { has: true, tax: 70000, insurance: 45000 } }, set: { tax: 10, infl: 0 }, scen: { events: [] }, ops: [],
+    accounts: [{ type: 'current', balance: 5000000, rate: 0 }] };
+  const a = JSON.parse(JSON.stringify(b)); a.ops.push({ id: 1, type: 'out', amount: 1000, date: '2026-12-10', acc: 0, pending: 1, note: 'Coffee' });
+  assert.strictEqual(L.verdict(b, a, { today: TODAY, reserve: 100000 }).level, 'ok', 'без месяца оплаты — не предупреждаем');
+  b.profile.car.taxMonth = 12; a.profile.car.taxMonth = 12;
+  assert.strictEqual(L.verdict(b, a, { today: TODAY, reserve: 100000 }).level, 'ok', 'налог 70 000 меньше подушки 100 000');
+  assert.strictEqual(L.verdict(b, a, { today: TODAY, reserve: 50000 }).level, 'warn', 'налог 70 000 больше подушки 50 000');
+});
+
+test('ревью #4: досрочное погашение целиком — конечная сумма, без бесконечности', () => {
+  const b = fixture(), mi = b.loans.findIndex(l => l.type === 'mortgage');
+  b.scen.events = [{ month: 2, type: 'payoff', loan: mi, amount: 0 }];
+  const e = entries(b).filter(x => x.prepay);
+  assert.strictEqual(e.length, 1);
+  assert.ok(Number.isFinite(e[0].amount));
+  assert.strictEqual(e[0].amount, -29207612);
+});
+
+test('ревью #6: инвестиции не оплачивают траты в расчёте', () => {
+  const b = { profile: {}, set: { tax: 10, infl: 0 }, scen: { events: [] },
+    accounts: [{ type: 'cash', balance: 10000, rate: 0 }, { type: 'invest', balance: 1000000, rate: 0 }],
+    ops: [{ id: 1, type: 'out', amount: 500000, date: '2026-11-10', acc: -1, pending: 1, note: 'TV' }] };
+  const p = L.project(b, { today: TODAY });
+  assert.strictEqual(p.firstShort.date, '2026-11-10');
+});
+
+test('ревью #1: прошедшие платежи по графику и разовые списываются со счёта', () => {
+  const b = { profile: {}, set: { tax: 10, infl: 0 }, scen: { events: [] },
+    accounts: [{ type: 'current', balance: 100000, rate: 0, asOf: '2026-11-01' }],
+    loans: [{ name: 'Plan', type: 'card', balance: 20000, rate: 0, day: 3, mode: 'plan', schedule: [{ ym: '2026-11', amount: 10000 }, { ym: '2026-12', amount: 10000 }] },
+      { name: 'Once', type: 'card', balance: 5000, rate: 0, mode: 'once', due: '2026-11-04' }] };
+  L.rollAccounts(b, { today: TODAY });
+  assert.strictEqual(b.accounts[0].balance, 85000);
+});

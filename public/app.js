@@ -657,7 +657,10 @@ const LG={
     const all=Ledger.buildEntries({...S,loanPaid:{},planPaid:{},bizPaid:{},incPaid:{}},{...o,from,to:end}).filter(e=>e.kind!=='rate'&&e.kind!=='op');
     const fut=Ledger.buildEntries(S,{...o,from:t,to:end}),key=e=>e.date+'|'+e.kind+'|'+JSON.stringify(e.src);
     const futK=new Set(fut.map(key));
-    return{past:all.filter(e=>!futK.has(key(e))&&!(e.kind==='event'&&e.date>t)),future:fut}}
+    const past=all.filter(e=>!futK.has(key(e))&&!(e.kind==='event'&&e.date>t));
+    // платежи этого месяца, которые rollLoans уже вычеркнул из графика (разовые, по графику, последний платёж) — из журнала оплат
+    S.loans.forEach((l,i)=>(l.paidLog||[]).filter(x=>x.date.slice(0,7)===ym&&x.date<=t).forEach(x=>{if(!past.some(e=>e.kind==='loan'&&e.src.i===i&&e.date===x.date))past.push({date:x.date,amount:-num(x.amount),kind:'loan',src:{type:'loan',i},label:l.name||'',loan:i})}));
+    return{past,future:fut}}
 };
 function monthNow(){
   const t=new Date();t.setHours(0,0,0,0);const y=t.getFullYear(),m=t.getMonth(),ym=ymd(t).slice(0,7),D=dim(y,m),day=t.getDate();
@@ -1465,7 +1468,8 @@ async function afterLogin(){
   S=emptyState();
   try{const r=await api('/api/budget');S=normalize(r.data);REV=r.rev||0}catch(_){}
   translateDefaults();
-  if(migrateRefund()|rollLoans()|rollOps()|Ledger.rollAccounts(S,{today:todayStr(),T,fx:c=>fxRate(c)/fxRate(S.currency)}).changed)pushBudget();
+  // сначала счета догоняют план (им нужны прошедшие платежи по кредитам), потом rollLoans обрезает графики
+  if(migrateRefund()|Ledger.rollAccounts(S,{today:todayStr(),T,fx:c=>fxRate(c)/fxRate(S.currency)}).changed|rollLoans()|rollOps())pushBudget();
 }
 async function init(){
   try{const r=await api('/api/me');USER=r.user;AIENABLED=r.ai}catch(_){}
@@ -2084,6 +2088,9 @@ document.addEventListener('change',e=>{const k=e.target.dataset?.k;if(!k||NOVERD
     el.innerHTML=verdictHtml(v)+`<div class="btns"><button class="btn ghost" data-vundo="1">↩ ${T('Отменить','Undo','Չեղարկել')}</button><button class="btn ghost" data-vclose="1">${T('Оставить','Keep','Թողնել')}</button></div>`;el._before=before},0)});
 let VTIMER=null;
 function opVerdictLive(){const el=$('#opverdict');if(!el)return;clearTimeout(VTIMER);VTIMER=setTimeout(()=>{const d=S.opDraft;if(!(num(d.amount)>0)){el.innerHTML='';opBtnLabel(null);return}
+  const op=opFromDraft(d),c=Ledger.canSpendNow(S,op,{today:todayStr()});
+  if(!c.ok){el.innerHTML=`<div class="verdict bad"><b>⛔ ${T(`Сейчас там только ${fmt(c.available)} — записать трату ${fmt(op.amount)} сегодняшним числом нельзя. Выберите другой счёт, сначала добавьте кредит или поставьте будущую дату.`,`Only ${fmt(c.available)} is there now — a ${fmt(op.amount)} spend can’t be dated today. Pick another account, add the loan first, or set a future date.`,`Հիմա այնտեղ կա միայն ${fmt(c.available)}՝ ${fmt(op.amount)} ծախսը այսօրվա ամսաթվով գրանցել հնարավոր չէ։`)}</b></div>`;const btn=document.querySelector('[data-op="save"]');if(btn)btn.disabled=true;return}
+  {const btn=document.querySelector('[data-op="save"]');if(btn)btn.disabled=false}
   const v=Ledger.verdict(S,opPreview(d),vOpts());el.innerHTML=verdictHtml(v);opBtnLabel(v)},250)}
 function opBtnLabel(v){const b=document.querySelector('[data-op="save"]');if(b)b.textContent=v&&v.level==='no'?'⚠️ '+T('Всё равно записать','Save anyway','Միևնույն է գրանցել'):'✓ '+T('Записать','Save','Գրանցել')}
 function opSave(){
@@ -2091,6 +2098,8 @@ function opSave(){
   if(amt<=0){if(m)m.textContent=T('Введите сумму.','Enter an amount.','Մուտքագրեք գումարը։');return}
   const base=Math.round(toBase(amt,d.cur)*100)/100;
   const op=opFromDraft(d);
+  {const c=Ledger.canSpendNow(S,op,{today:todayStr()});if(!c.ok){const an=c.acc>=0?`«${esc(S.accounts[c.acc].bank||'')}»`:T('всех счетах','all your accounts','բոլոր հաշիվներում');
+    if(m)m.innerHTML=`<span class="bad">❌ ${T(`На ${c.acc>=0?'счёте ':''}${an} сейчас ${fmt(c.available)} — потратить ${fmt(base)} невозможно, таких денег там нет. Если платили с другого счёта — выберите его. Если в долг или в кредит — сначала добавьте долг во «Кредиты». Если трата будет позже — поставьте будущую дату, и мозг покажет, когда это станет возможно.`,`${an} holds ${fmt(c.available)} right now — you can’t have spent ${fmt(base)}. Pick the account you paid from, add the loan first if it was on credit, or set a future date to plan it.`,`${an}-ում հիմա կա ${fmt(c.available)}՝ ${fmt(base)} ծախսել հնարավոր չէ։ Ընտրեք այն հաշիվը, որից վճարել եք, կամ նշեք ապագա ամսաթիվ։`)}</span>`;return}}
   // дата в будущем — операция запланирована: счёт и кредит изменятся только в этот день (rollOps)
   if(op.date>todayStr())op.pending=1;else opApply(op);
   {const ev=FC().events||[],tp=op.type==='out'?'oneExpense':'oneIncome',k=ev.findIndex(e=>e.type===tp&&ymd(fcMonth(Math.round(num(e.month)))).slice(0,7)===op.date.slice(0,7)&&Math.abs(Math.abs(num(e.amount))-base)<1);if(k>=0){ev.splice(k,1);op.replacedEv=1}}

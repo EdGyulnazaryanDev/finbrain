@@ -127,7 +127,7 @@
         if (evYm === ym) {
           if (ev.type === 'oneIncome') push(date, amt, 'event', src, label, { acc: ev.acc === undefined || ev.acc === '' ? -1 : num(ev.acc) });
           if (ev.type === 'oneExpense') push(date, -amt, 'event', src, label, { acc: ev.acc === undefined || ev.acc === '' ? -1 : num(ev.acc) });
-          if ((ev.type === 'prepay' || ev.type === 'payoff') && b.loans && b.loans[num(ev.loan)]) out.push({ date, amount: ev.type === 'payoff' ? -Infinity : -amt, acc: -1, kind: 'event', src, label: label || (b.loans[num(ev.loan)].name || ''), loan: num(ev.loan), prepay: ev.type, mode: ev.mode || 'term' });
+          if ((ev.type === 'prepay' || ev.type === 'payoff') && b.loans && b.loans[num(ev.loan)] && inRange(date)) out.push({ date, amount: ev.type === 'payoff' ? -num(b.loans[num(ev.loan)].balance) : -amt, acc: -1, kind: 'event', src, label: label || (b.loans[num(ev.loan)].name || ''), loan: num(ev.loan), prepay: ev.type, mode: ev.mode || 'term' });
           if (ev.type === 'rate' && inRange(date)) out.push({ date, amount: 0, acc: -1, kind: 'rate', src, label, target: ev.target, rate: num(ev.rate) });
           if (ev.type === 'newLoan' && amt && ev.use !== 'spend') push(date, amt, 'event', src, label || T('Новый кредит', 'New loan', 'Նոր վարկ'));
         }
@@ -155,11 +155,11 @@
     const entries = sortEntries([...buildEntries(b, { ...opts, from: today, to: end }), ...(opts.extra || [])]);
     const accs = (b.accounts || []).map(a => ({ b: num(a.balance), r: num(a.rate) / 1200, inv: a.type === 'invest' }));
     if (!accs.length) accs.push({ b: 0, r: 0, inv: false });
-    const order = accs.map((a, i) => i).sort((x, y) => (ORDER[(b.accounts[x] || {}).type] ?? 5) - (ORDER[(b.accounts[y] || {}).type] ?? 5));
+    const order = accs.map((a, i) => i).filter(i => !accs[i].inv).sort((x, y) => (ORDER[(b.accounts[x] || {}).type] ?? 5) - (ORDER[(b.accounts[y] || {}).type] ?? 5)); // инвестиции траты не оплачивают
     let main = num(scen.target); if (!(main >= 0 && accs[main] && !accs[main].inv)) main = order.find(i => !accs[i].inv) ?? 0;
     const loans = (b.loans || []).map(l => ({ b: num(l.balance), r: isTemp(l) ? 0 : num(l.rate) / 1200, p: num(l.payment), temp: isTemp(l), name: l.name || '', closed: null }));
     const tax = 1 - num(set.tax) / 100, infl = scen.infl === false ? 0 : num(set.infl) / 100, growth = num(scen.growth) / 100, tYm = today.slice(0, 7);
-    const take = (x, from) => { let left = x; const seq = from >= 0 && accs[from] ? [from, ...order.filter(i => i !== from)] : order;
+    const take = (x, from) => { let left = x; const seq = from >= 0 && accs[from] && !accs[from].inv ? [from, ...order.filter(i => i !== from)] : order;
       for (const i of seq) { if (left <= 0) break; const t = Math.min(Math.max(0, accs[i].b), left); accs[i].b -= t; left -= t; } if (left > 0) accs[main].b -= left; };
     const free = () => accs.reduce((s, a) => s + (a.inv ? 0 : a.b), 0);
     const debt = () => loans.reduce((s, l) => s + Math.max(0, l.b), 0);
@@ -198,7 +198,7 @@
       }
       if (d.slice(8) === String(daysIn(ym))) { for (const a of accs) if (a.b > 0 && a.r > 0) a.b += a.b * a.r * tax; }
       const f = free(), snapshot = accs.map(a => Math.round(a.b));
-      out.days.push({ date: d, free: f, accs: snapshot });
+      out.days.push({ date: d, free: f, accs: snapshot, entry: worst });
       if (!out.low || f < out.low.value) out.low = { date: d, value: f, entry: worst };
       for (const g of goalsDef) { if (d === g.p.to) goalBal[g.i] = accs[num(g.p.acc)].b; if (d > g.p.to && goalBal[g.i + 'late'] === undefined && accs[num(g.p.acc)].b >= num(g.p.goal) && goalBal[g.i] < num(g.p.goal)) goalBal[g.i + 'late'] = ymDiff(g.p.to.slice(0, 7), ym) || 1; }
       mo.endFree = f; mo.debt = debt(); mo.worth = accs.reduce((s, a) => s + a.b, 0) - mo.debt; mo.net = mo.income + mo.one - mo.expenses - mo.payments;
@@ -274,8 +274,11 @@
     const pb = opts._pb || project(before, opts), pa = project(after, opts), R = opts.reserve ?? num((before.set || {}).reserve);
     const reasons = [];
     const deeper = pa.low && pb.low && pa.low.value < pb.low.value - 1;
-    const short = pa.firstShort && (!pb.firstShort || pa.firstShort.date < pb.firstShort.date || (deeper && pa.low.value < 0));
-    if (short) { const f = pa.firstShort, worse = !!pb.firstShort;
+    // новая нехватка в любой день: остаток < 0 и ниже, чем был без этого изменения
+    const nsd = pa.days.find((d, i) => d.free < -0.5 && d.free < (pb.days[i] ? pb.days[i].free : Infinity) - 1);
+    const short = pa.firstShort && (!pb.firstShort || pa.firstShort.date < pb.firstShort.date || (deeper && pa.low.value < 0) || !!nsd);
+    const shortAt = !pb.firstShort || pa.firstShort.date < pb.firstShort.date ? pa.firstShort : nsd ? { date: nsd.date, entry: nsd.entry || pa.firstShort.entry, short: Math.round(-nsd.free) } : pa.firstShort;
+    if (short) { const f = shortAt, worse = !!pb.firstShort;
       reasons.push({ code: 'short', worse, text: worse
         ? T(`И без этого ${fdate(pb.firstShort.date)} не хватает ${fmt(pb.firstShort.short)}. С этим станет хуже: ${fdate(f.date)} не хватит ${fmt(f.short)} на «${f.entry.label}».`, `Even without this you are short ${fmt(pb.firstShort.short)} on ${fdate(pb.firstShort.date)}. With it: ${fmt(f.short)} short on ${fdate(f.date)} for “${f.entry.label}”.`, `Առանց սրա էլ ${fdate(pb.firstShort.date)}-ին պակասում է ${fmt(pb.firstShort.short)}։ Սրանով՝ ${fdate(f.date)}-ին չի բավականացնի ${fmt(f.short)}՝ «${f.entry.label}»-ի համար։`)
         : T(`${fdate(f.date)} не хватит ${fmt(f.short)} на «${f.entry.label}».`, `On ${fdate(f.date)} you will be ${fmt(f.short)} short for “${f.entry.label}”.`, `${fdate(f.date)}-ին չի բավականացնի ${fmt(f.short)}՝ «${f.entry.label}»-ի համար։`) }); }
@@ -287,7 +290,7 @@
         ? T(`«${g.name}» к ${fdate(g.due)} не успеете: соберёте ${fmt(g.atDue)} из ${fmt(g.goal)}, цель сдвинется на ${g.lateMonths} мес.`, `“${g.name}” won’t be ready by ${fdate(g.due)}: ${fmt(g.atDue)} of ${fmt(g.goal)}, ${g.lateMonths} mo late.`, `«${g.name}»-ը ${fdate(g.due)}-ին չի հասցնի՝ ${fmt(g.atDue)}/${fmt(g.goal)}, ուշացում ${g.lateMonths} ամիս։`)
         : T(`«${g.name}» к ${fdate(g.due)} не успеете: соберёте ${fmt(g.atDue)} из ${fmt(g.goal)}.`, `“${g.name}” won’t be ready by ${fdate(g.due)}: ${fmt(g.atDue)} of ${fmt(g.goal)}.`, `«${g.name}»-ը ${fdate(g.due)}-ին չի հասցնի՝ ${fmt(g.atDue)}/${fmt(g.goal)}։`) }); });
     const c = changes(before, after), months = new Set([...c.ops.map(x => x.o.date.slice(0, 7)), ...c.events.map(x => x.o.date ? x.o.date.slice(0, 7) : ymAdd(opts.today.slice(0, 7), (Math.round(num(x.o.month)) || 1) - 1))]);
-    if (months.size) { const heavy = buildEntries(after, { ...opts, from: opts.today, to: addDays(opts.today, 730) }).filter(e => months.has(e.date.slice(0, 7)) && (e.kind === 'yearly' || (e.kind === 'tax' && (e.src.k === 'tax' || e.src.k === 'year'))));
+    if (months.size) { const heavy = buildEntries(after, { ...opts, from: opts.today, to: addDays(opts.today, 730) }).filter(e => months.has(e.date.slice(0, 7)) && !e.src.spread && -e.amount > R && (e.kind === 'yearly' || (e.kind === 'tax' && (e.src.k === 'tax' || e.src.k === 'year'))));
       heavy.forEach(e => reasons.push({ code: 'heavyMonth', text: T(`В этом месяце ещё ${e.label}: ${fmt(-e.amount)}.`, `This month also has ${e.label}: ${fmt(-e.amount)}.`, `Այս ամսին նաև ${e.label}՝ ${fmt(-e.amount)}։`) })); }
     const level = short ? 'no' : reasons.length ? 'warn' : 'ok';
     const title = level === 'ok' ? T(`Можно. Самая низкая точка — ${fdate(pa.low ? pa.low.date : opts.today)}: останется ${fmt(pa.low ? pa.low.value : 0)}.`, `You can. Lowest point: ${fdate(pa.low ? pa.low.date : opts.today)}, ${fmt(pa.low ? pa.low.value : 0)} left.`, `Կարելի է։ Ամենացածր կետը՝ ${fdate(pa.low ? pa.low.date : opts.today)}, կմնա ${fmt(pa.low ? pa.low.value : 0)}։`)
@@ -302,7 +305,16 @@
     return { level, title, reasons, low: pa.low, firstShort: pa.firstShort, waitUntil, split, before: pb, after: pa };
   }
 
-  const Ledger = { project, rollAccounts, verdict, shift, changes, annuity, num, ymd, dim, ymDay, addDays, ymAdd, ymDiff, parse, loanMode, isTemp, loanDue, loanPlan, activeIn, incFreq, quarterMonths, incomeInMonth, planOccIn, bizAmounts, buildEntries, sortEntries };
+  // Трата сегодня или раньше уже произошла: она не может быть больше, чем было денег (на выбранном счёте или на всех, кроме инвестиций).
+  // Будущие траты и доходы не проверяются — для них есть вердикт.
+  function canSpendNow(b, op, opts) {
+    if (op.type !== 'out' || op.date > opts.today) return { ok: true };
+    const accs = b.accounts || [], a = op.acc >= 0 ? accs[op.acc] : null;
+    const available = a ? Math.max(0, num(a.balance)) : accs.filter(x => x.type !== 'invest').reduce((s, x) => s + Math.max(0, num(x.balance)), 0);
+    return { ok: num(op.amount) <= available + 0.5, available, acc: a ? op.acc : -1 };
+  }
+
+  const Ledger = { project, rollAccounts, verdict, canSpendNow, shift, changes, annuity, num, ymd, dim, ymDay, addDays, ymAdd, ymDiff, parse, loanMode, isTemp, loanDue, loanPlan, activeIn, incFreq, quarterMonths, incomeInMonth, planOccIn, bizAmounts, buildEntries, sortEntries };
   root.Ledger = Ledger;
   if (typeof module !== 'undefined' && module.exports) module.exports = Ledger;
 })(typeof window !== 'undefined' ? window : globalThis);
