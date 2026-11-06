@@ -65,3 +65,45 @@ test('buildEntries: расходы на жизнь распределяются 
   // 7–30 ноября = 24 дня из 30: сигареты 25 000 + еда 30 000 + бензин 40 000 + парковка 2 000
   near(sum, -(25000 + 30000 + 40000 + 2000) * 24 / 30, 1, 'жизнь за 7–30 ноября');
 });
+
+const proj = (b, o = {}) => L.project(b, { today: TODAY, ...o });
+
+test('project: конец ноября без новой траты', () => {
+  const p = proj(fixture());
+  // 1 380 000 − ремонт 700 000 − ипотека 378 612 − ВТБ 154 302,6 − Rocket line 5 246,6 + 1 291,8 + 5 547
+  // − жизнь 97 000 × 24/30 = 77 600 − коммуналка 38 500 = 18 900 (+ ~40 ֏ процентов на остаток накопительного)
+  assert.strictEqual(p.months[0].ym, '2026-11');
+  near(p.months[0].endFree, 18900, 1000, 'конец ноября');
+  // в ноябре денег хватает; первая нехватка — в декабре (подарки 150 000 + налог на машину 70 000 + кредиты)
+  assert.ok(p.firstShort && p.firstShort.date >= '2026-12-01', 'в ноябре нехватки нет');
+});
+
+test('project: нет ни одного счёта — не падает, первая нехватка в первый же день трат', () => {
+  const b = fixture(); b.accounts = [];
+  const p = proj(b);
+  assert.ok(p.firstShort);
+  assert.strictEqual(p.firstShort.date, '2026-11-07');
+});
+
+test('project: проценты по счёту начисляются в конце месяца после налога', () => {
+  const b = { profile: {}, accounts: [{ type: 'savings', balance: 1000000, rate: 12 }], set: { tax: 10, infl: 0 }, scen: { events: [] } };
+  const d = proj(b).days.find(x => x.date === '2026-11-30');
+  near(d.free, 1000000 + 10000 * 0.9, 1, 'после процентов');
+});
+
+test('project: цель собирается к сроку', () => {
+  const b = { profile: {}, set: { tax: 10, infl: 0 }, scen: { events: [] },
+    accounts: [{ type: 'current', balance: 5000000, rate: 0 }, { type: 'savings', balance: 0, rate: 0 }],
+    plans: [{ kind: 'save', name: 'Renovation', amount: 100000, freq: 'monthly', from: '2026-12-01', to: '2028-06-01', acc: 1, goal: 1800000 }] };
+  const g = proj(b).goals[0];
+  assert.strictEqual(g.name, 'Renovation');
+  near(g.atDue, 1900000, 1, 'собрано к 1 июня 2028 (19 взносов)');
+  assert.strictEqual(g.ok, true);
+});
+
+test('project: укладывается в 30 мс на 24 месяца', () => {
+  const b = fixture(), t = [];
+  for (let i = 0; i < 5; i++) { const s = process.hrtime.bigint(); proj(b); t.push(Number(process.hrtime.bigint() - s) / 1e6); }
+  t.sort((a, c) => a - c);
+  assert.ok(t[2] < 30, 'медиана ' + t[2].toFixed(1) + ' мс');
+});

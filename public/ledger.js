@@ -143,7 +143,74 @@
     return sortEntries(out);
   }
 
-  const Ledger = { num, ymd, dim, ymDay, addDays, ymAdd, ymDiff, parse, loanMode, isTemp, loanDue, loanPlan, activeIn, incFreq, quarterMonths, incomeInMonth, planOccIn, bizAmounts, buildEntries, sortEntries };
+  /* ---- прокрутка по дням ---- */
+  const ORDER = { cash: 0, current: 1, savings: 2, deposit: 3, invest: 4 };
+  const annuity = (B, r, n) => n <= 0 ? B : r === 0 ? B / n : B * r / (1 - Math.pow(1 + r, -n));
+  const remainN = (b, r, p) => b <= 0.5 ? 0 : r === 0 ? Math.ceil(b / Math.max(1, p)) : p <= b * r ? 600 : Math.ceil(-Math.log(1 - r * b / p) / Math.log(1 + r));
+  const EXP_KINDS = { living: 1, bill: 1, yearly: 1, plan: 1, tax: 1 };
+
+  // Остатки на каждый день от завтра на opts.days дней, итоги по месяцам, самая низкая точка, первая нехватка, цели.
+  function project(b, opts) {
+    const today = opts.today, days = opts.days || 730, end = addDays(today, days), set = b.set || {}, scen = b.scen || {};
+    const entries = sortEntries([...buildEntries(b, { ...opts, from: today, to: end }), ...(opts.extra || [])]);
+    const accs = (b.accounts || []).map(a => ({ b: num(a.balance), r: num(a.rate) / 1200, inv: a.type === 'invest' }));
+    if (!accs.length) accs.push({ b: 0, r: 0, inv: false });
+    const order = accs.map((a, i) => i).sort((x, y) => (ORDER[(b.accounts[x] || {}).type] ?? 5) - (ORDER[(b.accounts[y] || {}).type] ?? 5));
+    let main = num(scen.target); if (!(main >= 0 && accs[main] && !accs[main].inv)) main = order.find(i => !accs[i].inv) ?? 0;
+    const loans = (b.loans || []).map(l => ({ b: num(l.balance), r: isTemp(l) ? 0 : num(l.rate) / 1200, p: num(l.payment), temp: isTemp(l), name: l.name || '', closed: null }));
+    const tax = 1 - num(set.tax) / 100, infl = scen.infl === false ? 0 : num(set.infl) / 100, growth = num(scen.growth) / 100, tYm = today.slice(0, 7);
+    const take = (x, from) => { let left = x; const seq = from >= 0 && accs[from] ? [from, ...order.filter(i => i !== from)] : order;
+      for (const i of seq) { if (left <= 0) break; const t = Math.min(Math.max(0, accs[i].b), left); accs[i].b -= t; left -= t; } if (left > 0) accs[main].b -= left; };
+    const free = () => accs.reduce((s, a) => s + (a.inv ? 0 : a.b), 0);
+    const debt = () => loans.reduce((s, l) => s + Math.max(0, l.b), 0);
+    const goalsDef = (b.plans || []).map((p, i) => ({ p, i })).filter(({ p }) => p.kind === 'save' && num(p.goal) > 0 && p.to && p.to > today && accs[num(p.acc)]);
+    const goalBal = {};
+    const out = { days: [], months: [], low: null, firstShort: null, goals: [], reserve: opts.reserve ?? num(set.reserve) };
+    let mo = null, k = 0, ei = 0;
+    const newMonth = ym => { mo = { ym, income: 0, expenses: 0, payments: 0, interest: 0, one: 0, net: 0, endFree: 0, debt: 0, worth: 0, notes: [], closed: [] }; out.months.push(mo); };
+    newMonth(tYm);
+    for (let d = addDays(today, 1); d <= end; d = addDays(d, 1)) {
+      const ym = d.slice(0, 7);
+      if (ym !== mo.ym) newMonth(ym);
+      const kk = ymDiff(tYm, ym), fInfl = Math.pow(1 + infl, kk / 12), fGrow = Math.pow(1 + growth, Math.floor(kk / 12));
+      let worst = null;
+      for (; ei < entries.length && entries[ei].date <= d; ei++) {
+        const e = entries[ei]; if (e.date < d) continue;
+        let amt = e.amount;
+        if (e.kind === 'rate') { const [t, j] = String(e.target || '').split(':'); if (t === 'loan' && loans[+j]) { const l = loans[+j], n = remainN(l.b, l.r, l.p); l.r = e.rate / 1200; if (n > 0 && l.b > 0.5) l.p = annuity(l.b, l.r, n); } if (t === 'acc' && accs[+j]) accs[+j].r = e.rate / 1200; mo.notes.push('％ ' + e.label); continue; }
+        if (e.loan >= 0 && loans[e.loan]) {
+          const l = loans[e.loan]; if (l.b <= 0.5) continue;
+          if (e.prepay) { const x = Math.min(l.b, -amt); const n = remainN(l.b, l.r, l.p); l.b -= x; take(x, -1); mo.one -= x; mo.notes.push(e.label + ' −' + Math.round(x));
+            if (e.mode === 'payment' && l.b > 0.5 && n > 0) l.p = annuity(l.b, l.r, n); if (l.b <= 0.5) { l.b = 0; l.closed = ym; mo.closed.push(l.name); } amt = -x; }
+          else if (e.kind === 'op') { const x = Math.min(l.b, -amt); l.b -= x; take(-amt, e.acc); mo.one += amt; }
+          else { const i = l.b * l.r, due = l.temp ? -amt : (l.p || -amt), pay = Math.min(due, l.b + i); l.b = l.b + i - pay; take(pay, e.acc); mo.payments += pay; mo.interest += i; amt = -pay;
+            if (l.b <= 0.5) { l.b = 0; l.closed = ym; mo.closed.push(l.name); } }
+        } else {
+          if (e.kind === 'income' || EXP_KINDS[e.kind]) amt *= e.kind === 'income' ? fGrow : (e.kind === 'plan' ? 1 : fInfl);
+          if (e.kind === 'save') { const x = -amt; take(x, main); const t = e.toAcc; if (accs[t]) accs[t].b += x; else accs[main].b += x; continue; }
+          if (amt > 0) accs[e.acc >= 0 && accs[e.acc] ? e.acc : main].b += amt; else take(-amt, e.acc);
+          if (e.kind === 'income') mo.income += amt; else if (EXP_KINDS[e.kind]) mo.expenses -= amt; else if (e.kind === 'loan') mo.payments -= amt; else mo.one += amt;
+          if (e.kind === 'event' || e.kind === 'op' || e.kind === 'yearly' || (e.kind === 'tax' && -amt > 50000)) mo.notes.push(e.label + ' ' + (amt >= 0 ? '+' : '−') + Math.round(Math.abs(amt)));
+        }
+        const f = free();
+        if (amt < 0 && (!worst || amt < worst.amount)) worst = { ...e, amount: amt };
+        if (f < -0.5 && !out.firstShort) out.firstShort = { date: d, entry: { ...e, amount: amt }, short: Math.round(Math.min(-f, -amt)) };
+      }
+      if (d.slice(8) === String(daysIn(ym))) { for (const a of accs) if (a.b > 0 && a.r > 0) a.b += a.b * a.r * tax; }
+      const f = free(), snapshot = accs.map(a => Math.round(a.b));
+      out.days.push({ date: d, free: f, accs: snapshot });
+      if (!out.low || f < out.low.value) out.low = { date: d, value: f, entry: worst };
+      for (const g of goalsDef) { if (d === g.p.to) goalBal[g.i] = accs[num(g.p.acc)].b; if (d > g.p.to && goalBal[g.i + 'late'] === undefined && accs[num(g.p.acc)].b >= num(g.p.goal) && goalBal[g.i] < num(g.p.goal)) goalBal[g.i + 'late'] = ymDiff(g.p.to.slice(0, 7), ym) || 1; }
+      mo.endFree = f; mo.debt = debt(); mo.worth = accs.reduce((s, a) => s + a.b, 0) - mo.debt; mo.net = mo.income + mo.one - mo.expenses - mo.payments;
+      k++;
+    }
+    out.goals = goalsDef.map(({ p, i }) => { const atDue = goalBal[i] ?? (accs[num(p.acc)] || {}).b ?? 0, ok = atDue >= num(p.goal) - 0.5;
+      return { i, name: p.name || '', goal: num(p.goal), due: p.to, atDue, ok, lateMonths: ok ? 0 : (goalBal[i + 'late'] ?? Infinity) }; });
+    out.loans = loans;
+    return out;
+  }
+
+  const Ledger = { project, annuity, num, ymd, dim, ymDay, addDays, ymAdd, ymDiff, parse, loanMode, isTemp, loanDue, loanPlan, activeIn, incFreq, quarterMonths, incomeInMonth, planOccIn, bizAmounts, buildEntries, sortEntries };
   root.Ledger = Ledger;
   if (typeof module !== 'undefined' && module.exports) module.exports = Ledger;
 })(typeof window !== 'undefined' ? window : globalThis);
