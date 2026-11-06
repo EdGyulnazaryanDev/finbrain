@@ -293,7 +293,7 @@
     const title = level === 'ok' ? T(`Можно. Самая низкая точка — ${fdate(pa.low ? pa.low.date : opts.today)}: останется ${fmt(pa.low ? pa.low.value : 0)}.`, `You can. Lowest point: ${fdate(pa.low ? pa.low.date : opts.today)}, ${fmt(pa.low ? pa.low.value : 0)} left.`, `Կարելի է։ Ամենացածր կետը՝ ${fdate(pa.low ? pa.low.date : opts.today)}, կմնա ${fmt(pa.low ? pa.low.value : 0)}։`)
       : reasons[0].text;
     let waitUntil = null, split = null;
-    if (level !== 'ok' && opts.search !== false) {
+    if (level !== 'ok' && opts.search !== false && (c.ops.length || c.events.length || c.plans.length)) { // сдвигать можно только операции, события и регулярные
       const o2 = { ...opts, search: false, _pb: pb }; let warnAt = null;
       for (let k = 1; k <= 24 && !waitUntil; k++) { const s = shift(before, after, k), lv = verdict(before, s, o2).level; const ym = ymAdd([...months][0] || opts.today.slice(0, 7), k); if (lv === 'ok') waitUntil = ym; else if (lv === 'warn' && !warnAt) warnAt = ym; }
       if (!waitUntil && level === 'no') waitUntil = warnAt;

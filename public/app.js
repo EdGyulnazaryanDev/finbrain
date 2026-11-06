@@ -1045,7 +1045,7 @@ function vNewLoan(){
       ${k==='mortgage'&&S.accounts.length?sel('nl.acc',T('Взнос списать со счёта','Take down payment from','Կանխավճարը գանձել հաշվից'),accOpts):''}
       ${k==='mortgage'&&S.profile.housing.type==='rent'?`<div class="wide"><label class="f">${T('После покупки','After buying','Գնելուց հետո')}</label>${seg('nl.moveIn',[[true,T('Переедем, аренды не будет','Move in, no more rent','Կտեղափոխվենք, վարձ չի լինի')],[false,T('Аренда останется','Keep renting','Վարձը կմնա')]])}</div>`:''}
     </div>
-  </div><div id="nlout"></div>`;
+  </div><div id="nlverdict"></div><div id="nlout"></div>`;
 }
 function nlCompute(){
   const n=S.nl,k=n.kind,c=calc();
@@ -2086,6 +2086,18 @@ function verdictHtml(v){ // панель вердикта: можно / можн
   const ways=[v.waitUntil?T(`подождите до: ${mn(v.waitUntil)}`,`wait until ${mn(v.waitUntil)}`,`սպասեք մինչև ${mn(v.waitUntil)}`):'',v.split?T(`или разбейте на ${v.split.n} платежа(ей) по ${fmt(v.split.each)} в месяц`,`or split into ${v.split.n} monthly payments of ${fmt(v.split.each)}`,`կամ բաժանեք ${v.split.n} ամսական վճարի՝ ${fmt(v.split.each)}`):''].filter(Boolean);
   return `<div class="verdict ${cls}"><b>${ic} ${esc(v.title)}</b>${more?`<ul>${more}</ul>`:''}${ways.length?`<div class="ways">💡 ${ways.join(' · ')}</div>`:''}</div>`}
 function vOpts(){return{...LG.opts(),fmt,fdate}}
+const VTIMERS={};
+function liveVerdict(id,makeAfter){clearTimeout(VTIMERS[id]);VTIMERS[id]=setTimeout(()=>{const el=$('#'+id);if(!el)return;const a=makeAfter();el.innerHTML=a?verdictHtml(Ledger.verdict(S,a,vOpts())):''},250)}
+function nlPreview(){ // «после» для нового кредита: как если бы его уже взяли
+  const real=S;S=structuredClone(real);let after=null;try{if(nlCompute().P>0){takeLoan();after=S}}finally{S=real}return after}
+/* ---- поля, которые сохраняются сразу: после изменения — вердикт и «Отменить» ---- */
+const NOVERDICT=/^(opDraft|nl\.|calc\.|set\.|homeF|homeRange|lang|adv\.|biz\.(cur|regime|activity)$)|\.(name|bank|note|title|cat|stage)$/;
+let VBEFORE=null,VBEFOREK='';
+document.addEventListener('focusin',e=>{const k=e.target.dataset?.k;if(k&&!NOVERDICT.test(k)&&VBEFOREK!==k){VBEFORE=structuredClone(S);VBEFOREK=k}});
+document.addEventListener('change',e=>{const k=e.target.dataset?.k;if(!k||NOVERDICT.test(k)||!VBEFORE)return;const before=VBEFORE;VBEFORE=null;VBEFOREK='';
+  setTimeout(()=>{const v=Ledger.verdict(before,S,vOpts());if(v.level==='ok')return;
+    let el=$('#vtoast');if(!el){el=document.createElement('div');el.id='vtoast';el.className='toast vtoast';document.body.appendChild(el)}
+    el.innerHTML=verdictHtml(v)+`<div class="btns"><button class="btn ghost" data-vundo="1">↩ ${T('Отменить','Undo','Չեղարկել')}</button><button class="btn ghost" data-vclose="1">${T('Оставить','Keep','Թողնել')}</button></div>`;el._before=before},0)});
 let VTIMER=null;
 function opVerdictLive(){const el=$('#opverdict');if(!el)return;clearTimeout(VTIMER);VTIMER=setTimeout(()=>{const d=S.opDraft;if(!(num(d.amount)>0)){el.innerHTML='';opBtnLabel(null);return}
   const v=Ledger.verdict(S,opPreview(d),vOpts());el.innerHTML=verdictHtml(v);opBtnLabel(v)},250)}
@@ -2221,6 +2233,7 @@ function live(){
   if($('#advout'))$('#advout').innerHTML=advOut();
   if($('#accout'))$('#accout').innerHTML=accOut();
   if($('#nlout'))$('#nlout').innerHTML=nlOut();
+  if($('#nlverdict'))liveVerdict('nlverdict',nlPreview);
   if($('#calcout'))$('#calcout').innerHTML=calcOut();
   if($('#opsout'))$('#opsout').innerHTML=opsOut();
   opVerdictLive();
@@ -2264,6 +2277,8 @@ document.addEventListener('click',e=>{
   if(b.dataset.ev!==undefined){const f=addEvent(+b.dataset.ev);save();render();const el=document.querySelector(`[data-k="${f}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.op==='save'){opSave();return}
   if(b.dataset.opdel){opDelete(b.dataset.opdel);return}
+  if(b.dataset.vundo){const el=$('#vtoast');if(el&&el._before){S=el._before;SREV++;save();render()}el?.remove();return}
+  if(b.dataset.vclose){$('#vtoast')?.remove();return}
   if(b.dataset.autolog){(S.autoLog||[]).forEach(x=>x.seen=true);save();render();return}
   if(b.dataset.opq!==undefined){const f=opQuick(+b.dataset.opq);save();render();const el=document.querySelector(`[data-k="${f}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.impgo!==undefined){if(b.dataset.impgo==='1')impApply();else{IMP=null;IMPmsg='';render()}return}
