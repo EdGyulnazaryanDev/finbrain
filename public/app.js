@@ -55,10 +55,19 @@ function save(){recordHist();if(USER){clearTimeout(syncTimer);syncTimer=setTimeo
 async function api(path,opts={}){
   const r=await fetch(path,{credentials:'same-origin',...opts,headers:{'Content-Type':'application/json',...(opts.headers||{})}});
   let j=null;try{j=await r.json()}catch(_){}
-  if(!r.ok){const e=new Error(j?.error||('HTTP '+r.status));e.status=r.status;e.code=j?.error;throw e}
+  if(!r.ok){const e=new Error(j?.error||('HTTP '+r.status));e.status=r.status;e.code=j?.error;e.body=j;throw e}
   return j;
 }
-let SNAP='';async function pushBudget(){try{const h=SNAP?{'x-snapshot':SNAP}:undefined;SNAP='';await api('/api/budget',{method:'PUT',headers:h,body:JSON.stringify({data:{...S,lang:LANG}})});setSync('ok')}catch(e){setSync(e.status===401?'out':'err')}}
+// REV — ревизия бюджета на сервере. Сохранения идут строго по одному: следующее ждёт ответа на предыдущее.
+// 409 — данные изменились в другом окне или из терминала: берём свежие, наше изменение сервер положил в историю версий.
+let SNAP='',REV=0,PUSHING=false,PUSHAGAIN=false;
+async function pushBudget(){
+  if(PUSHING){PUSHAGAIN=true;return}PUSHING=true;
+  try{const h=SNAP?{'x-snapshot':SNAP}:undefined;SNAP='';const r=await api('/api/budget',{method:'PUT',headers:h,body:JSON.stringify({data:{...S,lang:LANG},base:REV})});REV=r.rev;setSync('ok')}
+  catch(e){if(e.status===409&&e.body?.data){S=normalize(e.body.data);REV=e.body.rev;PUSHAGAIN=false;render();setSync('ok');staleMsg()}else setSync(e.status===401?'out':'err')}
+  finally{PUSHING=false;if(PUSHAGAIN){PUSHAGAIN=false;pushBudget()}}}
+function staleMsg(){const t=T('Данные изменились в другом окне или из терминала — загружена свежая версия. Ваше последнее изменение сохранено в истории версий.','Your data changed in another window or from the terminal; the latest version is loaded. Your last change is kept in version history.','Տվյալները փոխվել են այլ պատուհանում կամ տերմինալից․ բեռնվել է թարմ տարբերակը։ Ձեր վերջին փոփոխությունը պահված է տարբերակների պատմության մեջ։');
+  let el=$('#stalemsg');if(!el){el=document.createElement('div');el.id='stalemsg';el.className='toast';document.body.appendChild(el)}el.textContent='⚠️ '+t;clearTimeout(el._t);el._t=setTimeout(()=>el.remove(),9000)}
 function setSync(st){const el=$('#syncst');if(el)el.textContent=st==='ok'?'☁️ ✓':st==='err'?'☁️ ⚠':''}
 let tab='home'; try{tab=localStorage.getItem(KEY+'-tab')||'home'}catch(e){}
 
@@ -1413,7 +1422,7 @@ function openAuth(){
 }
 async function afterLogin(){
   S=emptyState();
-  try{const r=await api('/api/budget');S=normalize(r.data)}catch(_){}
+  try{const r=await api('/api/budget');S=normalize(r.data);REV=r.rev||0}catch(_){}
   translateDefaults();
   if(migrateRefund()|rollLoans()|rollOps())pushBudget();
 }
@@ -2208,7 +2217,7 @@ document.addEventListener('click',e=>{
   if(b.dataset.seg){let v=b.dataset.v;v=v==='true'?true:v==='false'?false:v;if(b.dataset.seg==='homeRange'){S.homeFrom='';S.homeTo='';v=v==='all'?'all':+v}setPath(b.dataset.seg,v);save();render();return}
   if(b.dataset.q){const focus=quickAdd(b.dataset.q,+b.dataset.i);save();render();const el=document.querySelector(`[data-k="${focus}"]`);if(el){el.focus();el.select?.()}return}
   if(b.dataset.tg){tgAction(b.dataset.tg);return}
-  if(b.dataset.ver){api('/api/budget/versions/'+b.dataset.ver+'/restore',{method:'POST'}).then(r=>{S=normalize(r.data);render();dmsg(T('Версия восстановлена ✓','Version restored ✓','Տարբերակը վերականգնված է ✓'))}).catch(()=>dmsg(T('Не получилось','Failed','Չստացվեց')));return}
+  if(b.dataset.ver){api('/api/budget/versions/'+b.dataset.ver+'/restore',{method:'POST'}).then(r=>{S=normalize(r.data);REV=r.rev;render();dmsg(T('Версия восстановлена ✓','Version restored ✓','Տարբերակը վերականգնված է ✓'))}).catch(()=>dmsg(T('Не получилось','Failed','Չստացվեց')));return}
   if(b.dataset.sgh){if(b.dataset.sgh==='*')S.brainHide={};else{S.brainHide=S.brainHide||{};S.brainHide[b.dataset.sgh]=1}save();if($('#brainout'))$('#brainout').innerHTML=brainCard(tab,tab==='advice'?0:tab==='home'?4:3);return}
   if(b.dataset.sg){const f=SG_ACT[b.dataset.sg];if(f){f();try{localStorage.setItem(KEY+'-tab',tab)}catch(_){}save();render();window.scrollTo({top:0,behavior:'smooth'})}return}
   if(b.dataset.guide!==undefined){S.hideGuide=b.dataset.guide==='0';save();render();return}

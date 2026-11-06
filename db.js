@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS history (
 );
 `);
 
+// ревизия бюджета: счётчик, растёт при каждой записи (у updated_at точность всего секунда)
+if (!db.prepare('PRAGMA table_info(budgets)').all().some(c => c.name === 'rev')) db.exec('ALTER TABLE budgets ADD COLUMN rev INTEGER NOT NULL DEFAULT 0');
+
 const q = {
   userByEmail: db.prepare('SELECT * FROM users WHERE email = ?'),
   createUser: db.prepare('INSERT INTO users (email, pass_hash) VALUES (?, ?)'),
@@ -58,7 +61,7 @@ const q = {
                            WHERE s.token = ? AND s.expires_at > ?`),
   deleteSession: db.prepare('DELETE FROM sessions WHERE token = ?'),
   purgeSessions: db.prepare('DELETE FROM sessions WHERE expires_at <= ?'),
-  getBudget: db.prepare('SELECT data, updated_at FROM budgets WHERE user_id = ?'),
+  getBudget: db.prepare('SELECT data, updated_at, rev FROM budgets WHERE user_id = ?'),
   saveBudget: db.prepare(`INSERT INTO budgets (user_id, data, updated_at) VALUES (?, ?, datetime('now'))
                           ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`),
   addVersion: db.prepare('INSERT INTO budget_versions (user_id, data, reason) VALUES (?, ?, ?)'),
@@ -76,6 +79,21 @@ const q = {
   history: db.prepare('SELECT * FROM history ORDER BY date DESC LIMIT ?'),
 };
 
+// Запись бюджета с проверкой ревизии. base === null — без проверки (скрипты, восстановление версии).
+// Если base устарел, присланные данные не теряются: они уходят в историю версий с причиной 'conflict'.
+const getRev = db.prepare('SELECT data, rev FROM budgets WHERE user_id = ?');
+const putRev = db.prepare(`INSERT INTO budgets (user_id, data, updated_at, rev) VALUES (?, ?, datetime('now'), 1)
+  ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at, rev = budgets.rev + 1`);
+const saveBudgetRev = db.transaction((userId, json, base, reason) => {
+  const cur = getRev.get(userId), rev = cur ? cur.rev : 0;
+  if (base !== null && base !== undefined && cur && +base !== rev) {
+    q.addVersion.run(userId, json, reason || 'conflict');
+    return { ok: false, rev, data: cur.data };
+  }
+  putRev.run(userId, json);
+  return { ok: true, rev: rev + 1 };
+});
+
 function getMarket() {
   const row = q.getMarket.get();
   return row ? JSON.parse(row.data) : null;
@@ -84,4 +102,4 @@ function saveMarket(data) {
   q.saveMarket.run(JSON.stringify(data));
 }
 
-module.exports = { db, q, getMarket, saveMarket };
+module.exports = { db, q, getMarket, saveMarket, saveBudgetRev };

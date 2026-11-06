@@ -6,7 +6,7 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const fs = require('fs');
 const path = require('path');
-const { db, q } = require('../db');
+const { db, q, saveBudgetRev } = require('../db');
 const { parseWorkbook, buildImport, mergeImport } = require('../importer');
 
 const args = process.argv.slice(2);
@@ -82,7 +82,7 @@ async function main() {
     }
     if (parsed.settings?.mortgage && !(+opt('mortgage-balance') > 0)) console.log('ℹ️  Остаток ипотеки не указан — ипотека добавлена как ежемесячный расход. Добавьте --mortgage-balance и --mortgage-rate, чтобы она стала кредитом.\n');
     if (flag('dry-run')) { console.log('Это пробный запуск (--dry-run): база не изменена.'); return; }
-    q.saveBudget.run(u.id, JSON.stringify(after));
+    saveBudgetRev(u.id, JSON.stringify(after), null);
     console.log('✅ Записано в базу. Обновите страницу в браузере (Cmd+Shift+R).');
     return;
   }

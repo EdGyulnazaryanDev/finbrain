@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const cron = require('node-cron');
-const { q, getMarket } = require('./db');
+const { q, getMarket, saveBudgetRev } = require('./db');
 const ai = require('./ai');
 const market = require('./jobs/market');
 const reminders = require('./reminders');
@@ -95,7 +95,7 @@ app.get('/api/me', auth(false), (req, res) => {
 // --- бюджет пользователя ---
 app.get('/api/budget', auth(), (req, res) => {
   const row = q.getBudget.get(req.user.id);
-  res.json(row ? { data: JSON.parse(row.data), updatedAt: row.updated_at } : { data: null });
+  res.json(row ? { data: JSON.parse(row.data), updatedAt: row.updated_at, rev: row.rev } : { data: null, rev: 0 });
 });
 app.put('/api/budget', auth(), (req, res) => {
   const data = req.body?.data;
@@ -107,8 +107,11 @@ app.put('/api/budget', auth(), (req, res) => {
     const old = !last || Date.now() - Date.parse(last.created_at.replace(' ', 'T') + 'Z') > 15 * 60 * 1000;
     if (force || old) { q.addVersion.run(req.user.id, prev.data, force ? String(force).slice(0, 20) : 'auto'); q.pruneVersions.run(req.user.id, req.user.id); }
   }
-  q.saveBudget.run(req.user.id, json);
-  res.json({ ok: true });
+  // вкладка со старым кодом не присылает base — считаем её устаревшей, её данные уйдут в историю версий
+  const base = Number.isInteger(req.body?.base) ? req.body.base : -1;
+  const r = saveBudgetRev(req.user.id, json, base);
+  if (!r.ok) return res.status(409).json({ error: 'conflict', data: JSON.parse(r.data), rev: r.rev });
+  res.json({ ok: true, rev: r.rev });
 });
 
 const vSummary = d => ({ loans: (d.loans || []).length, incomes: (d.incomes || []).length, expenses: (d.expenses || []).length, ops: (d.ops || []).length, accounts: (d.accounts || []).length, plans: (d.plans || []).length });
@@ -120,8 +123,8 @@ app.post('/api/budget/versions/:id/restore', auth(), (req, res) => {
   if (!v) return res.status(404).json({ error: 'not_found' });
   const cur = q.getBudget.get(req.user.id);
   if (cur) q.addVersion.run(req.user.id, cur.data, 'before-restore');
-  q.saveBudget.run(req.user.id, v.data);
-  res.json({ ok: true, data: JSON.parse(v.data) });
+  const r = saveBudgetRev(req.user.id, v.data, null);
+  res.json({ ok: true, data: JSON.parse(v.data), rev: r.rev });
 });
 
 // --- рынок (только после входа) ---

@@ -35,8 +35,13 @@ if (arg('restore')) {
   if (!u) { console.error('Пользователь не найден:', email); process.exit(1); }
   const cur = db.prepare('SELECT data FROM budgets WHERE user_id = ?').get(u.id);
   try { if (cur) db.prepare('INSERT INTO budget_versions (user_id, data, reason) VALUES (?, ?, ?)').run(u.id, cur.data, 'before-restore'); } catch (_) {}
-  db.prepare(`INSERT INTO budgets (user_id, data, updated_at) VALUES (?, ?, datetime('now'))
-              ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`).run(u.id, JSON.stringify(data));
+  // rev + 1: открытые вкладки увидят, что данные новее, и не затрут восстановленное
+  const hasRev = db.prepare('PRAGMA table_info(budgets)').all().some(c => c.name === 'rev');
+  db.prepare(hasRev
+    ? `INSERT INTO budgets (user_id, data, updated_at, rev) VALUES (?, ?, datetime('now'), 1)
+       ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at, rev = budgets.rev + 1`
+    : `INSERT INTO budgets (user_id, data, updated_at) VALUES (?, ?, datetime('now'))
+       ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`).run(u.id, JSON.stringify(data));
   db.close();
   console.log('✓ Восстановлено:', summary(data));
   console.log('Обновите страницу в браузере (Cmd+Shift+R).');

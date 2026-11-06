@@ -10,7 +10,8 @@
     "market:update": "node jobs/market.js",
     "db:status": "node scripts/db.js status",
     "db:import": "node scripts/db.js import",
-    "db:recover": "node scripts/recover.js"
+    "db:recover": "node scripts/recover.js",
+    "test": "node --test \"tests/*.test.js\""
   },
   "engines": {
     "node": ">=18.17"
