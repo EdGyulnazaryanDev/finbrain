@@ -85,18 +85,15 @@ const MO=()=>T('мес.','mo','ամս.');
 function getPath(p){if(p==='IMPMBAL')return IMPopt.mBal;if(p==='IMPMRATE')return IMPopt.mRate;return p.split('.').reduce((o,k)=>o?.[k],S)}
 function setPath(p,v){if(p==='IMPMBAL'){IMPopt.mBal=v;return}if(p==='IMPMRATE'){IMPopt.mRate=v;return}const ks=p.split('.');let o=S;for(let i=0;i<ks.length-1;i++)o=o[ks[i]];o[ks.at(-1)]=v}
 function nextDate(day){const t=new Date();t.setHours(0,0,0,0);let d=new Date(t.getFullYear(),t.getMonth(),Math.min(day,dim(t.getFullYear(),t.getMonth())));if(d<t)d=new Date(t.getFullYear(),t.getMonth()+1,Math.min(day,dim(t.getFullYear(),t.getMonth()+1)));return d}
-function dim(y,m){return new Date(y,m+1,0).getDate()}
+const dim=Ledger.dim;
 
 /* ================== FINANCE ENGINE ================== */
 /* ---- виды погашения: ежемесячно / одной суммой к дате / по графику ---- */
-function loanMode(l){return l.mode||(Array.isArray(l.schedule)&&l.schedule.length?(l.schedule.length===1?'once':'plan'):'monthly')}
-const isTemp=l=>loanMode(l)!=='monthly';
-function ymDay(ym,day){const [y,m]=ym.split('-').map(Number);return ym+'-'+String(Math.min(num(day)||1,dim(y,m-1))).padStart(2,'0')}
-function loanDue(l){if(l.due)return l.due;if(Array.isArray(l.schedule)&&l.schedule.length)return ymDay(l.schedule[l.schedule.length-1].ym,l.day);return null}
-function loanPlan(l){const md=loanMode(l);
-  if(md==='once'){const d=loanDue(l);return d?[{date:d,amount:num(l.balance)}]:[]}
-  if(md==='plan')return (l.schedule||[]).map(x=>({date:ymDay(x.ym,l.day),amount:num(x.amount)})).sort((a,b)=>a.date.localeCompare(b.date));
-  return []}
+const loanMode=Ledger.loanMode; // правила дат живут в ledger.js
+const isTemp=Ledger.isTemp;
+const ymDay=Ledger.ymDay;
+const loanDue=Ledger.loanDue;
+const loanPlan=Ledger.loanPlan;
 function monthsUntil(ds){const d=new Date(ds+'T00:00:00'),t=new Date();return (d.getFullYear()-t.getFullYear())*12+(d.getMonth()-t.getMonth())}
 const daysUntil=ds=>{const t=new Date();t.setHours(0,0,0,0);return Math.round((new Date(ds+'T00:00:00')-t)/864e5)};
 function loanInfo(l){
@@ -136,14 +133,9 @@ function fvMonthly(A,rateY,months,tax){const r=rateY/1200;const fv=r===0?A*month
 
 /* ---- периодические доходы (раз в квартал / год / однократно) ---- */
 const INC_FREQ={monthly:['Каждый месяц','Monthly','Ամեն ամիս'],quarterly:['Раз в квартал','Quarterly','Եռամսյակը մեկ'],yearly:['Раз в год','Yearly','Տարին մեկ'],once:['Один раз','Once','Մեկ անգամ']};
-const incFreq=x=>x.freq||'monthly';
-const quarterMonths=x=>{const st=num(x.month)||1;return [0,3,6,9].map(k=>((st-1+k)%12)+1).sort((a,b)=>a-b)};
-function incomeInMonth(x,date){const f=incFreq(x),mo=date.getMonth()+1;if(f!=='once'&&!activeIn(x,ymd(date).slice(0,7)))return 0;
-  if(f==='monthly')return num(x.amount);
-  if(f==='quarterly')return quarterMonths(x).includes(mo)?num(x.amount):0;
-  if(f==='yearly')return mo===(num(x.month)||1)?num(x.amount):0;
-  if(f==='once')return x.date&&x.date.slice(0,7)===ymd(date).slice(0,7)?num(x.amount):0;
-  return 0}
+const incFreq=Ledger.incFreq;
+const quarterMonths=Ledger.quarterMonths;
+const incomeInMonth=(x,date)=>Ledger.incomeInMonth(x,ymd(date));
 const incAvg=x=>{const f=incFreq(x);return f==='quarterly'?num(x.amount)/3:f==='yearly'?num(x.amount)/12:0};
 function incWhen(x){const f=incFreq(x);if(f==='quarterly')return quarterMonths(x).map(m=>MONTHS()[m-1]).join(', ');if(f==='yearly')return MONTHSF()[(num(x.month)||1)-1];if(f==='once')return x.date?fdate(x.date):'—';return ''}
 function migrateRefund(){ // старый импорт: возврат налога лежал событиями прогноза → один периодический доход
@@ -327,7 +319,7 @@ function homeOut(){
 }
 
 /* ================== DATES: when an item is active ================== */
-const activeIn=(x,ym)=>(!x.from||x.from.slice(0,7)<=ym)&&(!x.to||x.to.slice(0,7)>=ym);
+const activeIn=Ledger.activeIn;
 const activeNow=x=>activeIn(x,ymd(new Date()).slice(0,7));
 const dateF=(path,label)=>`<label class="f">${label}<input type="date" data-k="${path}" data-t="str" value="${esc(getPath(path)||'')}"></label>`;
 const periodF=base=>dateF(base+'.from',T('Действует с','Active from','Գործում է սկսած'))+dateF(base+'.to',T('до (необяз.)','until (optional)','մինչև (ըստ ցանկ.)'));
@@ -370,18 +362,7 @@ function PLANS(){if(!S.plans)S.plans=[];return S.plans}
 const PL_FREQ={weekly:['Каждую неделю','Weekly','Ամեն շաբաթ'],monthly:['Каждый месяц','Monthly','Ամեն ամիս'],quarterly:['Раз в квартал','Quarterly','Եռամսյակը մեկ'],yearly:['Раз в год','Yearly','Տարին մեկ']};
 const PL_KIND={save:['🎯 Накопление','🎯 Saving','🎯 Խնայողություն'],pay:['🔁 Регулярный платёж','🔁 Recurring payment','🔁 Պարբերական վճար']};
 const planMonthly=p=>{const a=num(p.amount),f=p.freq||'monthly';return f==='weekly'?a*52/12:f==='quarterly'?a/3:f==='yearly'?a/12:a};
-function planOccIn(p,ym,uptoDay){ // amount that falls in month ym (optionally only up to day uptoDay)
-  const a=num(p.amount);if(!a||!activeIn(p,ym))return 0;const f=p.freq||'monthly';
-  const [y,m]=ym.split('-').map(Number),f0=p.from?new Date(p.from+'T00:00:00'):null,day0=f0?f0.getDate():1,lastD=uptoDay||31;
-  const end=p.to?new Date(p.to+'T00:00:00'):null;
-  if(f==='weekly'){const anchor=f0||new Date(y,m-1,1);let n=0;for(let d=1;d<=Math.min(lastD,dim(y,m-1));d++){const dt=new Date(y,m-1,d),k=Math.round((dt-anchor)/864e5);if(k>=0&&k%7===0&&(!end||dt<=end))n++}return n*a}
-  const dd=Math.min(day0,dim(y,m-1));if(dd>lastD)return 0;
-  const dt=new Date(y,m-1,dd);if(f0&&dt<f0)return 0;if(end&&dt>end)return 0;
-  const m0=f0?f0.getMonth()+1:1;
-  if(f==='monthly')return a;
-  if(f==='quarterly')return ((m-m0)%3+3)%3===0?a:0;
-  if(f==='yearly')return m===m0?a:0;
-  return 0}
+const planOccIn=Ledger.planOccIn;
 function planStats(p){
   const t=new Date(),cur=ymd(t).slice(0,7),fromYm=p.from?p.from.slice(0,7):cur;
   let done=0;if(fromYm<=cur){for(const ym of ymRange(fromYm,cur))done+=ym===cur?planOccIn(p,ym,t.getDate()):planOccIn(p,ym)}
@@ -1719,7 +1700,7 @@ const Q_REM=[
   ['🩺','Медосмотр','Check-up','Բժշկական զննում','health','yearly',1,0],
 ];
 function remList(){if(!S.reminders)S.reminders=[];return S.reminders}
-const ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const ymd=Ledger.ymd;
 function nextOcc(r,from){ // first occurrence on/after `from` (Date, 00:00) that is after lastPaid
   const day=Math.max(1,Math.min(31,num(r.day)||1));const paid=r.lastPaid?new Date(r.lastPaid+'T00:00:00'):null;
   const mk=(y,m)=>new Date(y,m,Math.min(day,dim(y,m)));

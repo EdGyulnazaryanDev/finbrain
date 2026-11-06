@@ -1,0 +1,761 @@
+{
+ "currency": "AMD",
+ "profile": {
+  "married": false,
+  "partnerIncome": 0,
+  "kids": [],
+  "car": {
+   "has": true,
+   "fuel": 40000,
+   "parking": 2000,
+   "insurance": 45000,
+   "service": 0,
+   "tax": 70000,
+   "taxMonth": 12,
+   "insMonth": 3
+  },
+  "housing": {
+   "type": "own",
+   "rent": 0,
+   "maint": 0
+  },
+  "util": {
+   "electricity": 30000,
+   "gas": 0,
+   "water": 0,
+   "internet": 7000,
+   "phone": 1500,
+   "building": 0
+  }
+ },
+ "incomes": [
+  {
+   "name": "Tax refund",
+   "amount": 375000,
+   "freq": "quarterly",
+   "month": 1,
+   "day": 20,
+   "src": "xlsx",
+   "from": "2025-01-01",
+   "to": "2039-01-01"
+  }
+ ],
+ "expenses": [
+  {
+   "name": "Cigarettes",
+   "cat": "other",
+   "amount": 25000,
+   "src": "xlsx"
+  },
+  {
+   "name": "Food",
+   "cat": "food",
+   "amount": 30000,
+   "src": "xlsx"
+  }
+ ],
+ "loans": [
+  {
+   "name": "Loan A",
+   "bank": "Bank V",
+   "type": "consumer",
+   "balance": 290458.6,
+   "rate": 21.4,
+   "payment": 147820,
+   "day": 16,
+   "schedule": [
+    {
+     "ym": "2026-11",
+     "amount": 154302.6
+    },
+    {
+     "ym": "2026-12",
+     "amount": 136156
+    }
+   ],
+   "mode": "plan",
+   "deadline": "2026-11-16",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan B",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 174436,
+   "rate": 21.7,
+   "payment": 59197,
+   "day": 22,
+   "schedule": [
+    {
+     "ym": "2026-11",
+     "amount": 5246.6
+    },
+    {
+     "ym": "2026-12",
+     "amount": 71424.1
+    },
+    {
+     "ym": "2027-01",
+     "amount": 97765.3
+    }
+   ],
+   "mode": "plan",
+   "deadline": "2026-11-22",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan C",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 57886.2,
+   "rate": 21.7,
+   "payment": 29467,
+   "day": 27,
+   "schedule": [
+    {
+     "ym": "2026-11",
+     "amount": 1291.8
+    },
+    {
+     "ym": "2027-01",
+     "amount": 56594.4
+    }
+   ],
+   "mode": "plan",
+   "deadline": "2026-11-27",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan D",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 5547,
+   "rate": 21.7,
+   "payment": 5648,
+   "day": 29,
+   "schedule": [
+    {
+     "ym": "2026-11",
+     "amount": 5547
+    }
+   ],
+   "mode": "once",
+   "due": "2026-11-29",
+   "deadline": "2026-11-29",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan E",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 11088,
+   "rate": 21.7,
+   "payment": 11289,
+   "day": 11,
+   "schedule": [
+    {
+     "ym": "2026-12",
+     "amount": 11088
+    }
+   ],
+   "mode": "once",
+   "due": "2026-12-11",
+   "deadline": "2026-12-11",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan F",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 5543.9,
+   "rate": 21.7,
+   "payment": 5645,
+   "day": 15,
+   "schedule": [
+    {
+     "ym": "2026-12",
+     "amount": 5543.9
+    }
+   ],
+   "mode": "once",
+   "due": "2026-12-15",
+   "deadline": "2026-12-15",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan G",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 11088,
+   "rate": 21.7,
+   "payment": 11289,
+   "day": 29,
+   "schedule": [
+    {
+     "ym": "2026-12",
+     "amount": 11088
+    }
+   ],
+   "mode": "once",
+   "due": "2026-12-29",
+   "deadline": "2026-12-29",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan H",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 11088,
+   "rate": 21.7,
+   "payment": 11289,
+   "day": 29,
+   "schedule": [
+    {
+     "ym": "2026-12",
+     "amount": 11088
+    }
+   ],
+   "mode": "once",
+   "due": "2026-12-29",
+   "deadline": "2026-12-29",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan I",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 5546.9,
+   "rate": 21.7,
+   "payment": 5648,
+   "day": 3,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 5546.9
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-03",
+   "deadline": "2027-01-03",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan J",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 11093.9,
+   "rate": 21.7,
+   "payment": 11295,
+   "day": 3,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 11093.9
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-03",
+   "deadline": "2027-01-03",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan K",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 11093.9,
+   "rate": 21.7,
+   "payment": 11295,
+   "day": 3,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 11093.9
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-03",
+   "deadline": "2027-01-03",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan L",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 22187.8,
+   "rate": 21.7,
+   "payment": 22590,
+   "day": 6,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 22187.8
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-06",
+   "deadline": "2027-01-06",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan M",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 11093.9,
+   "rate": 21.7,
+   "payment": 11295,
+   "day": 6,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 11093.9
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-06",
+   "deadline": "2027-01-06",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan N",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 5547,
+   "rate": 21.7,
+   "payment": 5648,
+   "day": 8,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 5547
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-08",
+   "deadline": "2027-01-08",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan O",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 21914.32,
+   "rate": 21.7,
+   "payment": 22311,
+   "day": 7,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 21914.32
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-07",
+   "deadline": "2027-02-07",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan P",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 21914.32,
+   "rate": 21.7,
+   "payment": 22311,
+   "day": 7,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 21914.32
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-07",
+   "deadline": "2027-02-07",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan Q",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 21902.43,
+   "rate": 21.7,
+   "payment": 22299,
+   "day": 8,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 21902.43
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-08",
+   "deadline": "2027-02-08",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan R",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 21878.65,
+   "rate": 21.7,
+   "payment": 22275,
+   "day": 10,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 21878.65
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-10",
+   "deadline": "2027-02-10",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan S",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 21854.87,
+   "rate": 21.7,
+   "payment": 22251,
+   "day": 12,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 21854.87
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-12",
+   "deadline": "2027-02-12",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan T",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 21854.87,
+   "rate": 21.7,
+   "payment": 22251,
+   "day": 12,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 21854.87
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-12",
+   "deadline": "2027-02-12",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan U",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 21854.87,
+   "rate": 21.7,
+   "payment": 22251,
+   "day": 12,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 21854.87
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-12",
+   "deadline": "2027-02-12",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan V",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 10915.54,
+   "rate": 21.7,
+   "payment": 11113,
+   "day": 14,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 10915.54
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-14",
+   "deadline": "2027-02-14",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan W",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 10891.76,
+   "rate": 21.7,
+   "payment": 11089,
+   "day": 18,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 10891.76
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-18",
+   "deadline": "2027-02-18",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan X",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 21581.46,
+   "rate": 21.7,
+   "payment": 21972,
+   "day": 4,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 21581.46
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-04",
+   "deadline": "2027-03-04",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan Y",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 10772.89,
+   "rate": 21.7,
+   "payment": 10968,
+   "day": 7,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 10772.89
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-07",
+   "deadline": "2027-03-07",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan Z",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 21545.79,
+   "rate": 21.7,
+   "payment": 21936,
+   "day": 7,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 21545.79
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-07",
+   "deadline": "2027-03-07",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan A26",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 21200.97,
+   "rate": 21.7,
+   "payment": 21585,
+   "day": 6,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 21200.97
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-06",
+   "deadline": "2027-04-06",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan B27",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 21200.97,
+   "rate": 21.7,
+   "payment": 21585,
+   "day": 6,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 21200.97
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-06",
+   "deadline": "2027-04-06",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan C28",
+   "bank": "Bank R",
+   "type": "card",
+   "balance": 10594.49,
+   "rate": 21.7,
+   "payment": 10787,
+   "day": 7,
+   "schedule": [
+    {
+     "ym": "2027-01",
+     "amount": 10594.49
+    }
+   ],
+   "mode": "once",
+   "due": "2027-01-07",
+   "deadline": "2027-04-07",
+   "src": "xlsx",
+   "asOf": "2026-11-06"
+  },
+  {
+   "name": "Loan D29",
+   "bank": "Bank M",
+   "type": "mortgage",
+   "balance": 29207612,
+   "rate": 12.5,
+   "payment": 378612,
+   "day": 16,
+   "mode": "monthly",
+   "refundBy": "co",
+   "asOf": "2026-11-06"
+  }
+ ],
+ "accounts": [
+  {
+   "bank": "Bank 1",
+   "type": "cash",
+   "balance": 50000,
+   "rate": 0,
+   "asOf": "2026-11-06"
+  },
+  {
+   "bank": "Bank 2",
+   "type": "savings",
+   "balance": 1300000,
+   "rate": 3,
+   "asOf": "2026-11-06"
+  },
+  {
+   "bank": "Bank 3",
+   "type": "current",
+   "balance": 30000,
+   "rate": 0,
+   "asOf": "2026-11-06"
+  }
+ ],
+ "reminders": [
+  {
+   "title": "Apartment handover",
+   "cat": "home",
+   "amount": 0,
+   "freq": "once",
+   "date": "2028-06-01",
+   "day": 1,
+   "month": 1,
+   "daysBefore": 30,
+   "active": true,
+   "src": "xlsx"
+  }
+ ],
+ "set": {
+  "dep": 9,
+  "inv": 8,
+  "tax": 10,
+  "infl": 4
+ },
+ "scen": {
+  "events": [
+   {
+    "month": 2,
+    "type": "oneExpense",
+    "amount": 150000,
+    "acc": "1",
+    "note": "Gifts",
+    "src": "xlsx"
+   }
+  ],
+  "infl": true,
+  "growth": 0,
+  "horizon": 24,
+  "target": 1
+ },
+ "plans": [],
+ "biz": {
+  "on": true,
+  "from": "2026-04-01",
+  "regime": "turnover",
+  "activity": "hitech",
+  "revenue": 900000,
+  "cur": "AMD",
+  "docExp": 0,
+  "social": true,
+  "health": "off",
+  "accountant": 15000,
+  "accDay": 15,
+  "bankFee": 0,
+  "other": 0,
+  "vat": false,
+  "revDay": 1
+ },
+ "ops": [
+  {
+   "id": 1793945727095,
+   "type": "out",
+   "amount": 700000,
+   "orig": 700000,
+   "cur": "AMD",
+   "rate": 1,
+   "cat": "car",
+   "date": "2026-11-15",
+   "note": "Car repair",
+   "acc": 1,
+   "replacedEv": 1,
+   "pending": 1
+  }
+ ],
+ "bizPaid": {
+  "soc": "2026-11-15",
+  "acc": "2026-11-15"
+ }
+}
