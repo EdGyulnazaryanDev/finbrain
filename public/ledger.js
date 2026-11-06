@@ -20,7 +20,7 @@
   function loanPlan(l) {
     const md = loanMode(l);
     if (md === 'once') { const d = loanDue(l); return d ? [{ date: d, amount: num(l.balance) }] : []; }
-    if (md === 'plan') return (l.schedule || []).map(x => ({ date: ymDay(x.ym, l.day), amount: num(x.amount) })).sort((a, b) => a.date.localeCompare(b.date));
+    if (md === 'plan') return (l.schedule || []).map(x => ({ date: ymDay(x.ym, x.day || l.day), amount: num(x.amount) })).sort((a, b) => a.date.localeCompare(b.date)); // у записи графика может быть свой день (перенесённый остаток)
     return [];
   }
   const activeIn = (x, ym) => (!x.from || x.from.slice(0, 7) <= ym) && (!x.to || x.to.slice(0, 7) >= ym);
@@ -293,7 +293,9 @@
     if (months.size) { const heavy = buildEntries(after, { ...opts, from: opts.today, to: addDays(opts.today, 730) }).filter(e => months.has(e.date.slice(0, 7)) && !e.src.spread && -e.amount > R && (e.kind === 'yearly' || (e.kind === 'tax' && (e.src.k === 'tax' || e.src.k === 'year'))));
       heavy.forEach(e => reasons.push({ code: 'heavyMonth', text: T(`В этом месяце ещё ${e.label}: ${fmt(-e.amount)}.`, `This month also has ${e.label}: ${fmt(-e.amount)}.`, `Այս ամսին նաև ${e.label}՝ ${fmt(-e.amount)}։`) })); }
     const level = short ? 'no' : reasons.length ? 'warn' : 'ok';
-    const title = level === 'ok' ? T(`Можно. Самая низкая точка — ${fdate(pa.low ? pa.low.date : opts.today)}: останется ${fmt(pa.low ? pa.low.value : 0)}.`, `You can. Lowest point: ${fdate(pa.low ? pa.low.date : opts.today)}, ${fmt(pa.low ? pa.low.value : 0)} left.`, `Կարելի է։ Ամենացածր կետը՝ ${fdate(pa.low ? pa.low.date : opts.today)}, կմնա ${fmt(pa.low ? pa.low.value : 0)}։`)
+    const lowV = pa.low ? pa.low.value : 0;
+    const title = level === 'ok' && lowV < -0.5 ? T(`Хуже не станет, но денег всё равно не хватает: ${fdate(pa.low.date)} на счетах ${fmt(lowV)}.`, `It won’t get worse, but you are still short: on ${fdate(pa.low.date)} your accounts are at ${fmt(lowV)}.`, `Ավելի վատ չի լինի, բայց գումարը դեռ պակասում է՝ ${fdate(pa.low.date)}-ին հաշիվներում ${fmt(lowV)}։`)
+      : level === 'ok' ? T(`Можно. Самая низкая точка — ${fdate(pa.low ? pa.low.date : opts.today)}: останется ${fmt(pa.low ? pa.low.value : 0)}.`, `You can. Lowest point: ${fdate(pa.low ? pa.low.date : opts.today)}, ${fmt(pa.low ? pa.low.value : 0)} left.`, `Կարելի է։ Ամենացածր կետը՝ ${fdate(pa.low ? pa.low.date : opts.today)}, կմնա ${fmt(pa.low ? pa.low.value : 0)}։`)
       : reasons[0].text;
     let waitUntil = null, split = null;
     if (level !== 'ok' && opts.search !== false && (c.ops.length || c.events.length || c.plans.length)) { // сдвигать можно только операции, события и регулярные
@@ -314,7 +316,64 @@
     return { ok: num(op.amount) <= available + 0.5, available, acc: a ? op.acc : -1 };
   }
 
-  const Ledger = { project, rollAccounts, verdict, canSpendNow, shift, changes, annuity, num, ymd, dim, ymDay, addDays, ymAdd, ymDiff, parse, loanMode, isTemp, loanDue, loanPlan, activeIn, incFreq, quarterMonths, incomeInMonth, planOccIn, bizAmounts, buildEntries, sortEntries };
+  /* ---- оплата части платежа: часть платим сейчас, остаток переносим на другую дату ---- */
+  // Проведённая операция: списывает со счёта и уменьшает долг (одна реализация для приложения и для оплаты части).
+  function applyOp(b, op, today) {
+    const a = op.acc >= 0 && (b.accounts || [])[op.acc];
+    if (a) a.balance = Math.round((num(a.balance) + (op.type === 'in' ? num(op.amount) : -num(op.amount))) * 100) / 100;
+    const l = op.loan >= 0 && (b.loans || [])[op.loan];
+    if (l) { l.balance = Math.max(0, Math.round((num(l.balance) - num(op.amount)) * 100) / 100); l.asOf = today; }
+  }
+  // o: { loan, date — дата платежа, amount — сколько платим сейчас, acc, restDate — когда остаток }.
+  // Меняет b только при успехе; иначе { ok:false, err: 'loan'|'amount'|'full'|'date'|'funds' }.
+  function payPart(b, o, opts) {
+    const today = opts.today, T = opts.T || (r => r), l = (b.loans || [])[o.loan], x = num(o.amount);
+    if (!l) return { ok: false, err: 'loan' };
+    const mode = loanMode(l), item = mode === 'monthly' ? { date: o.date, amount: num(l.payment) } : loanPlan(l).find(p => p.date === o.date);
+    if (!item) return { ok: false, err: 'loan' };
+    if (!(x > 0)) return { ok: false, err: 'amount' };
+    if (x >= item.amount - 0.5) return { ok: false, err: 'full', full: item.amount };
+    if (!o.restDate || o.restDate <= today) return { ok: false, err: 'date' };
+    const accs = b.accounts || [], a = o.acc >= 0 ? accs[o.acc] : null;
+    const available = a ? Math.max(0, num(a.balance)) : accs.filter(z => z.type !== 'invest').reduce((s, z) => s + Math.max(0, num(z.balance)), 0);
+    if (x > available + 0.5) return { ok: false, err: 'funds', available };
+    const rest = Math.round((item.amount - x) * 100) / 100, name = l.name || '', id = opts.id || Date.now();
+    const op = { id, type: 'out', amount: x, orig: x, cur: b.currency || 'AMD', rate: 1, cat: 'loan', date: o.payDate && o.payDate <= today ? o.payDate : today, acc: a ? o.acc : -1, loan: o.loan, part: true,
+      note: T('Часть платежа', 'Part of payment', 'Վճարի մաս') + ': ' + name };
+    (b.ops = b.ops || []).push(op);
+    applyOp(b, op, today);
+    if (mode === 'plan') {
+      const k = (l.schedule || []).findIndex(z => ymDay(z.ym, z.day || l.day) === o.date);
+      if (k >= 0) l.schedule.splice(k, 1);
+      l.schedule.push({ ym: o.restDate.slice(0, 7), day: +o.restDate.slice(8), amount: rest });
+    } else if (mode === 'once') {
+      l.due = o.restDate; l.schedule = [{ ym: o.restDate.slice(0, 7), amount: rest }];
+    } else {
+      (b.loanPaid = b.loanPaid || {})[o.loan] = o.date; // этот месяц закрыт, остаток — отдельной операцией
+      b.ops.push({ id: String(id) + 'r', type: 'out', amount: rest, orig: rest, cur: b.currency || 'AMD', rate: 1, cat: 'loan', date: o.restDate, acc: a ? o.acc : -1, loan: o.loan, pending: 1, part: true,
+        note: T('Остаток платежа', 'Rest of payment', 'Վճարի մնացորդ') + ': ' + name });
+    }
+    return { ok: true, rest, op, restDate: o.restDate };
+  }
+  // Мозг подбирает дату остатка: первая из ближайших 60 дней, когда деньги есть и остальным платежам хуже не становится.
+  // Нет такой даты — берётся та, где вред (сумма дней с нехваткой) наименьший; harm > 0 говорит об этом.
+  function suggestRestDate(b, o, opts) {
+    const today = opts.today, shortage = p => p.days.reduce((s, d) => s + Math.max(0, -d.free), 0);
+    const run = restDate => { const c = JSON.parse(J(b)); const r = payPart(c, { ...o, restDate }, opts); return r.ok ? { r, p: project(c, { ...opts, days: 400 }) } : null; };
+    const A = run(addDays(today, 1500)); if (!A) return null; // остаток не платится вовсе: точка отсчёта
+    const base = shortage(A.p), first = o.date > today ? o.date : addDays(today, 1);
+    let best = null;
+    for (let k = 0; k < 60; k++) {
+      const d = addDays(first, k); if (d <= today) continue;
+      const x = run(d); if (!x) continue;
+      const harm = shortage(x.p) - base;
+      if (!best || harm < best.harm - 0.5) best = { date: d, harm: Math.round(harm), rest: x.r.rest, firstShort: x.p.firstShort };
+      if (harm <= 0.5) break;
+    }
+    return best;
+  }
+
+  const Ledger = { project, rollAccounts, verdict, canSpendNow, applyOp, payPart, suggestRestDate, shift, changes, annuity, num, ymd, dim, ymDay, addDays, ymAdd, ymDiff, parse, loanMode, isTemp, loanDue, loanPlan, activeIn, incFreq, quarterMonths, incomeInMonth, planOccIn, bizAmounts, buildEntries, sortEntries };
   root.Ledger = Ledger;
   if (typeof module !== 'undefined' && module.exports) module.exports = Ledger;
 })(typeof window !== 'undefined' ? window : globalThis);

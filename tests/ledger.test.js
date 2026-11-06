@@ -272,3 +272,70 @@ test('ревью #1: прошедшие платежи по графику и р
   L.rollAccounts(b, { today: TODAY });
   assert.strictEqual(b.accounts[0].balance, 85000);
 });
+
+/* ---- оплата части платежа ---- */
+const loanIdx = (b, name) => b.loans.findIndex(l => l.name === name);
+const opts = { today: TODAY };
+
+test('payPart: часть платежа по графику — списывается сейчас, остаток встаёт на выбранную дату', () => {
+  const b = fixture(), i = loanIdx(b, 'Loan A'), before = b.accounts[1].balance, loanBefore = b.loans[i].balance;
+  const r = L.payPart(b, { loan: i, date: '2026-11-16', amount: 40000, acc: 1, restDate: '2026-12-20' }, opts);
+  assert.strictEqual(r.ok, true);
+  near(r.rest, 154302.6 - 40000, 0.01, 'остаток платежа');
+  assert.strictEqual(b.accounts[1].balance, before - 40000);
+  near(b.loans[i].balance, loanBefore - 40000, 0.01, 'долг уменьшился на оплаченное');
+  assert.deepStrictEqual(L.loanPlan(b.loans[i]).map(x => [x.date, Math.round(x.amount)]), [['2026-12-16', 136156], ['2026-12-20', 114303]]);
+});
+
+test('payPart: разовый платёж — оплаченная часть уменьшает долг, остаток переезжает на новую дату', () => {
+  const b = fixture(), i = loanIdx(b, 'Loan D');
+  const r = L.payPart(b, { loan: i, date: '2026-11-29', amount: 2000, acc: 1, restDate: '2026-12-05' }, opts);
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(L.loanPlan(b.loans[i]).map(x => [x.date, x.amount]), [['2026-12-05', 3547]]);
+});
+
+test('payPart: ежемесячный платёж (ипотека) — месяц закрыт, остаток отдельной операцией на новую дату', () => {
+  const b = fixture(), i = loanIdx(b, 'Loan D29');
+  const r = L.payPart(b, { loan: i, date: '2026-11-16', amount: 100000, acc: 1, restDate: '2026-12-10' }, opts);
+  assert.strictEqual(r.ok, true);
+  const e = entries(b).filter(x => x.loan === i).map(x => [x.date, x.kind, Math.round(x.amount)]);
+  assert.ok(!e.some(x => x[0] === '2026-11-16'), 'ноябрьского платежа больше нет');
+  assert.ok(e.some(x => x[0] === '2026-12-10' && x[1] === 'op' && x[2] === -278612), 'остаток 278 612 на 10 декабря');
+  assert.ok(e.some(x => x[0] === '2026-12-16' && x[1] === 'loan'), 'декабрьский платёж на месте');
+});
+
+test('payPart: ошибки — не часть, нет денег, дата в прошлом', () => {
+  const b = fixture(), i = loanIdx(b, 'Loan A'), o = { loan: i, date: '2026-11-16', amount: 40000, acc: 1, restDate: '2026-12-20' };
+  assert.strictEqual(L.payPart(fixture(), { ...o, amount: 0 }, opts).err, 'amount');
+  assert.strictEqual(L.payPart(fixture(), { ...o, amount: 154302.6 }, opts).err, 'full');
+  const poor = fixture(); poor.accounts[1].balance = 10000; // на счёте меньше, чем хотим заплатить
+  assert.strictEqual(L.payPart(poor, o, opts).err, 'funds');
+  assert.strictEqual(L.payPart(fixture(), { ...o, restDate: '2026-11-05' }, opts).err, 'date');
+  assert.strictEqual(b.accounts[1].balance, 1300000, 'при ошибке данные не тронуты');
+});
+
+const tiny = (balance, withPay = true) => ({ profile: {}, set: { tax: 0, infl: 0 }, scen: { events: [] }, ops: [],
+  accounts: [{ type: 'current', balance, rate: 0, asOf: TODAY }],
+  incomes: withPay ? [{ name: 'Pay', amount: 300000, freq: 'monthly', day: 1 }] : [],
+  loans: [{ name: 'L', type: 'consumer', balance: 100000, rate: 0, day: 16, mode: 'plan', schedule: [{ ym: '2026-11', amount: 100000 }] }] });
+
+test('suggestRestDate: остаток ставится на первый день, когда денег хватает (день зарплаты)', () => {
+  const s = L.suggestRestDate(tiny(50000), { loan: 0, date: '2026-11-16', amount: 30000, acc: 0 }, opts);
+  assert.strictEqual(s.date, '2026-12-01');
+  assert.strictEqual(s.harm, 0);
+});
+
+test('suggestRestDate: если безопасной даты нет — наименьший вред и честный флаг', () => {
+  const s = L.suggestRestDate(tiny(50000, false), { loan: 0, date: '2026-11-16', amount: 30000, acc: 0 }, opts);
+  assert.ok(s.harm > 0);
+  assert.ok(s.date > '2026-11-16');
+});
+
+test('verdict: «можно» не говорит «можно», если денег всё равно не хватает', () => {
+  const b = fixture(); // и без этого 22 декабря не хватает
+  const v = verdict(b, withOp(b, 1000, '2026-11-10'));
+  assert.strictEqual(v.level, 'ok');
+  assert.ok(v.low.value < 0);
+  assert.doesNotMatch(v.title, /^Можно/);
+  assert.match(v.title, /не хватает/);
+});

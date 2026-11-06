@@ -33,7 +33,7 @@ const ymDay = (ym, day) => { const [y, m] = ym.split('-').map(Number); return ym
 function loanPlan(l) {
   const md = loanMode(l);
   if (md === 'once') { const d = l.due || (l.schedule?.length ? ymDay(l.schedule[l.schedule.length - 1].ym, l.day) : null); return d ? [{ date: d, amount: num(l.balance) }] : []; }
-  if (md === 'plan') return (l.schedule || []).map(x => ({ date: ymDay(x.ym, l.day), amount: num(x.amount) }));
+  if (md === 'plan') return (l.schedule || []).map(x => ({ date: ymDay(x.ym, x.day || l.day), amount: num(x.amount) }));
   return [];
 }
 function allReminders(data) {
