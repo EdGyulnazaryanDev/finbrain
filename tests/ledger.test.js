@@ -187,3 +187,12 @@ test('verdict: доход — можно', () => {
   const b = fixture(); b.scen.events = [];
   assert.strictEqual(verdict(b, withOp(b, 100000, '2026-11-10')).level, 'ok');
 });
+
+test('verdict: подушка проверяется в каждый день, а не только в самой низкой точке', () => {
+  const b = fixture(); b.scen.events = [];
+  const a = withOp(b, -10000, '2027-05-10');
+  assert.strictEqual(L.verdict(b, a, { today: TODAY, reserve: 1 }).level, 'ok');
+  const v = L.verdict(b, a, { today: TODAY, reserve: 3000000 });
+  assert.strictEqual(v.level, 'warn');
+  assert.ok(v.reasons.some(r => r.code === 'reserve'));
+});
