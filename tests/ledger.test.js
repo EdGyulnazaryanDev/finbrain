@@ -196,3 +196,18 @@ test('verdict: подушка проверяется в каждый день, �
   assert.strictEqual(v.level, 'warn');
   assert.ok(v.reasons.some(r => r.code === 'reserve'));
 });
+
+test('verdict: трата сдвигает цель — «можно, но» с причиной про цель', () => {
+  const b = fixture(); b.scen.events = [];
+  b.plans = [{ kind: 'save', name: 'Ремонт', amount: 100000, freq: 'monthly', from: '2026-12-05', to: '2028-06-01', acc: 1, goal: 1 }];
+  const atDue = L.project(b, { today: TODAY }).goals[0].atDue;
+  b.plans[0].goal = Math.round(atDue - 100000); // без траты цель успевает с запасом 100 000
+  assert.strictEqual(L.project(b, { today: TODAY }).goals[0].ok, true);
+  const v = L.verdict(b, withOp(b, -300000, '2027-05-10'), { today: TODAY, reserve: 0 });
+  assert.strictEqual(v.level, 'warn');
+  const g = v.reasons.find(r => r.code === 'goal');
+  assert.ok(g, 'есть причина про цель');
+  assert.match(g.text, /Ремонт/);
+  assert.strictEqual(v.after.goals[0].ok, false);
+  near(v.after.goals[0].atDue, atDue - 300000, 15000, 'к сроку соберётся на 300 000 меньше (± проценты на эти деньги за 13 мес.)');
+});

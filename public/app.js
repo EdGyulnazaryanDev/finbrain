@@ -427,8 +427,12 @@ function planCard(p,idx){
     else if(s.reachM!=null)tip=tipH('',T('Когда соберёте','When you’ll get there','Երբ կհավաքեք'),isFinite(s.reachM)?T(`Цель ${fmt(goal)} будет собрана примерно в ${monthLabel(s.reachM)}.`,`You’ll reach ${fmt(goal)} around ${monthLabel(s.reachM)}.`,`${fmt(goal)} նպատակին կհասնեք մոտավորապես ${monthLabel(s.reachM)}։`):T('С такой суммой цель не собрать.','This amount won’t reach the goal.','Այս գումարով նպատակին չեք հասնի։'))}
   return `<div class="card plan"><div class="planh"><h3>${save?'🎯':'🔁'} ${esc(p.name||L(PL_KIND[p.kind||'pay']).slice(3))} ${status}</h3><span class="muted">${fmt(num(p.amount))} · ${L(PL_FREQ[p.freq||'monthly'])} · ${p.from?fdate(p.from):'…'} — ${p.to?fdate(p.to):T('без срока','no end','առանց ժամկետի')}${save&&s.acc?' · '+esc(s.acc.bank||''):''}</span></div>
     ${base?`<div class="pbar"><div style="width:${pctv}%"></div></div><div class="muted" style="font-size:12px;margin:4px 0 10px">${Math.round(pctv)}% ${goal?T('от цели','of goal','նպատակից'):T('выполнено','done','կատարված')}</div>`:''}
-    <div class="grid">${lines.join('')}</div>${tip}${schedHtml(p,idx)}</div>`;
+    <div class="grid">${lines.join('')}</div>${tip}${goalTrack(idx)}${schedHtml(p,idx)}</div>`;
 }
+function goalTrack(i){ // по общему расчёту (все доходы, платежи и траты): соберётся ли цель к сроку
+  const g=(LG.proj().goals||[]).find(x=>x.i===i);if(!g)return '';
+  return g.ok?tipH('good',T('По общему расчёту','By the full forecast','Ըստ ընդհանուր հաշվարկի'),T(`К ${fdate(g.due)} на счёте цели будет ${fmt(g.atDue)} из ${fmt(g.goal)} ✓`,`By ${fdate(g.due)} the goal account will hold ${fmt(g.atDue)} of ${fmt(g.goal)} ✓`,`${fdate(g.due)}-ին նպատակի հաշվին կլինի ${fmt(g.atDue)}/${fmt(g.goal)} ✓`))
+    :tipH('bad',T('По общему расчёту не успеваете','By the full forecast you won’t make it','Ըստ ընդհանուր հաշվարկի չեք հասցնի'),T(`К ${fdate(g.due)} будет ${fmt(g.atDue)} из ${fmt(g.goal)}: не хватит ${fmt(g.goal-g.atDue)}${isFinite(g.lateMonths)?`, цель сдвинется на ${g.lateMonths} мес`:''}.`,`By ${fdate(g.due)}: ${fmt(g.atDue)} of ${fmt(g.goal)}, ${fmt(g.goal-g.atDue)} short${isFinite(g.lateMonths)?`, ${g.lateMonths} mo late`:''}.`,`${fdate(g.due)}-ին՝ ${fmt(g.atDue)}/${fmt(g.goal)}, պակաս՝ ${fmt(g.goal-g.atDue)}։`))}
 function plansOut(){
   const ps=PLANS().filter(p=>num(p.amount)>0);if(!ps.length)return '';
   const act=ps.filter(activeNow),pay=act.filter(p=>p.kind!=='save').reduce((a,p)=>a+planMonthly(p),0),sv=act.filter(p=>p.kind==='save').reduce((a,p)=>a+planMonthly(p),0),c=calc();
