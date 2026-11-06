@@ -44,14 +44,14 @@ function emptyState(){return{
   adv:{amount:0,mode:'once',horizon:0},
   nl:{kind:'mortgage',price:0,down:0,amount:0,rate:0,years:20,months:24,days:30,dayRate:0,fee:0,acc:0,moveIn:true,bank:''}
 }}
-function normalize(d){const e=emptyState();if(!d||!d.profile)return e;
+function normalize(d){SREV++;const e=emptyState();if(!d||!d.profile)return e;
   for(const k of Object.keys(e))if(d[k]===undefined)d[k]=e[k];
   for(const k of Object.keys(e.profile))if(d.profile[k]===undefined)d.profile[k]=e.profile[k];
   return d}
 let S=emptyState();
 try{localStorage.removeItem(KEY)}catch(e){} // бюджет хранится только на сервере
 let USER=null,AIENABLED=false,syncTimer=null,AUTH='checking';
-function save(){recordHist();if(USER){clearTimeout(syncTimer);syncTimer=setTimeout(pushBudget,800)}}
+function save(){SREV++;recordHist();if(USER){clearTimeout(syncTimer);syncTimer=setTimeout(pushBudget,800)}}
 async function api(path,opts={}){
   const r=await fetch(path,{credentials:'same-origin',...opts,headers:{'Content-Type':'application/json',...(opts.headers||{})}});
   let j=null;try{j=await r.json()}catch(_){}
@@ -640,22 +640,42 @@ function homeMore(){
 }
 
 /* ================== THIS MONTH: earned / spent / still to pay ================== */
+/* ---- денежный мозг: адаптер к ledger.js (одна лента, один расчёт на всё приложение) ---- */
+let SREV=0; // ревизия состояния для кэша расчёта: растёт в save() и при замене S
+const LG={
+  opts(){return{today:todayStr(),T,fx:c=>fxRate(c)/fxRate(S.currency),reserve:LG.reserve()}},
+  reserve(){return num(S.set?.reserve)>0?num(S.set.reserve):Math.round(calc().essential)},
+  _p:null,_k:'',
+  proj(){const k=SREV+'|'+todayStr()+'|'+S.currency;if(LG._k!==k||!LG._p){LG._p=Ledger.project(S,LG.opts());LG._k=k}return LG._p},
+  month(){ // записи текущего месяца: что уже было и что ещё будет
+    const t=todayStr(),ym=t.slice(0,7),from=Ledger.addDays(ym+'-01',-1),end=Ledger.ymDay(ym,31),o=LG.opts();
+    const all=Ledger.buildEntries({...S,loanPaid:{},planPaid:{},bizPaid:{},incPaid:{}},{...o,from,to:end}).filter(e=>e.kind!=='rate'&&e.kind!=='op');
+    const fut=Ledger.buildEntries(S,{...o,from:t,to:end}),key=e=>e.date+'|'+e.kind+'|'+JSON.stringify(e.src);
+    const futK=new Set(fut.map(key));
+    return{past:all.filter(e=>!futK.has(key(e))&&!(e.kind==='event'&&e.date>t)),future:fut}}
+};
 function monthNow(){
-  const t=new Date();t.setHours(0,0,0,0);const y=t.getFullYear(),m=t.getMonth(),ym=ymd(t).slice(0,7),D=dim(y,m),day=t.getDate(),m0=new Date(y,m,1),mEnd=new Date(y,m,D),m0s=ymd(m0),c=calc();
-  const spent=[],todo=[],incGot=[],incWait=[],saved=[];
-  for(const r of allReminders()){if(!r.auto||r.active===false)continue;let from=m0;
-    for(let k=0;k<8;k++){const d=nextOcc({...r,lastPaid:null},from);if(!d||d>mEnd)break;
-      const it={n:r.title||'',v:num(r.amount),d,cat:r.cat},done=d<t||(r.lastPaid&&r.lastPaid>=m0s&&r.lastPaid>=ymd(new Date(d.getFullYear(),d.getMonth(),d.getDate()-10)));
-      if(r.cat==='income')(done?incGot:incWait).push(it);else if(r.cat==='save')saved.push({...it,done});else(done?spent:todo).push(it);
-      from=new Date(d);from.setDate(from.getDate()+1);if(r.freq==='once')break}}
-  S.loans.forEach(l=>{if(isTemp(l))(l.paidLog||[]).filter(x=>x.date.slice(0,7)===ym).forEach(x=>spent.push({n:l.name||'',v:x.amount,d:new Date(x.date+'T00:00:00'),cat:'loan'}))});
-  (S.ops||[]).filter(o=>o.pending&&o.date.slice(0,7)===ym).forEach(o=>(o.type==='in'?incWait:todo).push({n:o.note||'',v:o.amount,d:new Date(o.date+'T00:00:00'),cat:o.cat}));
+  const t=new Date();t.setHours(0,0,0,0);const y=t.getFullYear(),m=t.getMonth(),ym=ymd(t).slice(0,7),D=dim(y,m),day=t.getDate();
+  const{past,future}=LG.month(),toItem=e=>({n:e.label||'',v:Math.abs(e.amount),d:new Date(e.date+'T00:00:00'),cat:e.amount>0?'income':e.kind==='tax'?'tax':e.kind==='loan'?'loan':e.kind==='op'?'op':e.kind}),sum=a=>a.reduce((s,x)=>s+x.v,0);
+  const regular=e=>e.src.type==='biz'||e.src.type==='partner'||(e.src.type==='income'&&incFreq(S.incomes[e.src.i]||{})==='monthly');
+  const pastInc=past.filter(e=>e.amount>0),incBase=pastInc.filter(regular).reduce((a,e)=>a+e.amount,0),incGot=pastInc.filter(e=>!regular(e)).map(toItem);
+  const spent=past.filter(e=>e.amount<0&&e.kind!=='living'&&e.kind!=='save').map(toItem),saved=past.filter(e=>e.kind==='save').map(e=>({...toItem(e),done:true}));
+  const incWait=future.filter(e=>e.amount>0).map(toItem),todo=future.filter(e=>e.amount<0&&e.kind!=='living'&&e.kind!=='save').map(toItem);
+  const livingSpent=-past.filter(e=>e.kind==='living').reduce((a,e)=>a+e.amount,0),livingLeft=-future.filter(e=>e.kind==='living').reduce((a,e)=>a+e.amount,0);
   const ops=(S.ops||[]).filter(o=>!o.pending&&(o.date||'').slice(0,7)===ym),opsIn=ops.filter(o=>o.type==='in').reduce((a,o)=>a+o.amount,0),opsOut=ops.filter(o=>o.type==='out').reduce((a,o)=>a+o.amount,0);
-  const living=c.needs+c.want,livingSpent=living*day/D,livingLeft=living-livingSpent;
-  const sum=a=>a.reduce((s,x)=>s+x.v,0);
-  const incBase=c.income,got=incBase+sum(incGot)+opsIn,wait=sum(incWait),earned=got+wait;
-  const spentObl=sum(spent),todoObl=sum(todo),spentAll=opsOut+spentObl+livingSpent,todoAll=todoObl+livingLeft;
-  return{t,day,D,ym,incBase,incGot,incWait,opsIn,opsOut,spent,todo,saved,living,livingSpent,livingLeft,got,wait,earned,spentObl,todoObl,spentAll,todoAll,left:earned-spentAll-todoAll};
+  const got=incBase+sum(incGot)+opsIn,wait=sum(incWait),earned=got+wait,spentObl=sum(spent),todoObl=sum(todo),spentAll=opsOut+spentObl+livingSpent,todoAll=todoObl+livingLeft;
+  const p=LG.proj(),m0=p.months[0]||{endFree:0};
+  return{t,day,D,ym,incBase,incGot,incWait,opsIn,opsOut,spent,todo,saved,living:livingSpent+livingLeft,livingSpent,livingLeft,got,wait,earned,spentObl,todoObl,spentAll,todoAll,
+    left:earned-spentAll-todoAll,endFree:m0.endFree,proj:p,reserve:p.reserve};
+}
+function monthVerdict(x){ // вывод финансиста о месяце
+  const p=x.proj,out=[],mn=d=>{const w=MONTHSF()[+d.slice(5,7)-1];return w.charAt(0).toUpperCase()+w.slice(1)+' '+d.slice(0,4)};
+  if(p.firstShort){const f=p.firstShort;out.push(`<b class="bad">❌ ${T(`${fdate(f.date)} не хватит ${fmt(f.short)} на «${esc(f.entry.label)}».`,`On ${fdate(f.date)} you will be ${fmt(f.short)} short for “${esc(f.entry.label)}”.`,`${fdate(f.date)}-ին չի բավականացնի ${fmt(f.short)}՝ «${esc(f.entry.label)}»-ի համար։`)}</b>`)}
+  else if(p.low&&p.low.value<x.reserve)out.push(`<b class="warn">⚠️ ${T(`${fdate(p.low.date)} на счетах останется ${fmt(p.low.value)} — меньше подушки ${fmt(x.reserve)}.`,`On ${fdate(p.low.date)} your accounts drop to ${fmt(p.low.value)}, below the ${fmt(x.reserve)} cushion.`,`${fdate(p.low.date)}-ին հաշիվներում կմնա ${fmt(p.low.value)}՝ բարձից (${fmt(x.reserve)}) պակաս։`)}</b>`);
+  if(x.left<0){const big=[...x.todo,...x.spent].sort((a,b)=>b.v-a.v).slice(0,3).map(i=>esc(i.n)).join(', ');
+    const back=p.months.slice(1).find(m=>m.net>=0);
+    out.push(T(`${mn(x.ym)}: вы тратите из накоплений ${fmt(-x.left)} — больше всего ${big}.`,`${mn(x.ym)}: you spend ${fmt(-x.left)} of your savings, mostly ${big}.`,`${mn(x.ym)}․ խնայողություններից ծախսում եք ${fmt(-x.left)}, հիմնականում՝ ${big}։`)+(back?' '+T(`Снова в плюсе: ${mn(back.ym)}.`,`Positive again: ${mn(back.ym)}.`,`Կրկին պլյուսում՝ ${mn(back.ym)}։`):''))}
+  return out.length?`<p class="mverdict">${out.join(' ')}</p>`:'';
 }
 function monthCard(){
   const x=monthNow();if(!(x.earned>0||x.spentAll>0))return '';
@@ -666,10 +686,11 @@ function monthCard(){
   const W=760,H=96,P=24,xd=d=>P+(W-2*P)*(d-1)/(x.D-1),mxT=Math.max(1,...x.todo.map(i=>i.v),...x.spent.map(i=>i.v),...(S.ops||[]).filter(o=>(o.date||'').slice(0,7)===x.ym).map(o=>o.amount));
   const dot=(i,future)=>{const r=4+10*Math.sqrt(i.v/mxT);return `<circle cx="${xd(i.d.getDate())}" cy="52" r="${r}" fill="${i.cat==='income'?'var(--c2)':'var(--c4)'}" opacity="${future?.9:.3}"><title>${fdate(ymd(i.d))} · ${esc(i.n)}: ${fmt(i.v)}</title></circle>${future&&i.v>=mxT*0.25?`<text x="${xd(i.d.getDate())}" y="${52-r-5}" font-size="11" text-anchor="middle" fill="var(--ink)">${k1(i.v)}</text>`:''}`};
   const ticks=[1,5,10,15,20,25,x.D].map(d=>`<text x="${xd(d)}" y="${H-4}" font-size="11" text-anchor="middle" fill="var(--muted)">${d}</text>`).join('');
-  const tl=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:120px"><line x1="${P}" x2="${W-P}" y1="52" y2="52" stroke="var(--line)" stroke-width="6" stroke-linecap="round"/><line x1="${P}" x2="${xd(x.day)}" y1="52" y2="52" stroke="var(--brand)" stroke-width="6" stroke-linecap="round" opacity=".5"/>${[...x.spent,...(S.ops||[]).filter(o=>(o.date||'').slice(0,7)===x.ym).map(o=>({n:o.note||L((opCats(o.type)[o.cat]||OP_OUT.other).slice(1,4)),v:o.amount,d:new Date(o.date+'T00:00:00'),cat:o.type==='in'?'income':'op'}))].map(i=>dot(i,false)).join('')}${x.incWait.map(i=>dot(i,true)).join('')}${x.todo.map(i=>dot(i,true)).join('')}<line x1="${xd(x.day)}" x2="${xd(x.day)}" y1="18" y2="70" stroke="var(--brand)" stroke-width="2"/><text x="${xd(x.day)}" y="14" font-size="11" text-anchor="middle" fill="var(--brand)" font-weight="700">${T('сегодня','today','այսօր')}</text>${ticks}</svg>`;
+  const tl=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-height:120px"><line x1="${P}" x2="${W-P}" y1="52" y2="52" stroke="var(--line)" stroke-width="6" stroke-linecap="round"/><line x1="${P}" x2="${xd(x.day)}" y1="52" y2="52" stroke="var(--brand)" stroke-width="6" stroke-linecap="round" opacity=".5"/>${[...x.spent,...(S.ops||[]).filter(o=>(o.date||'').slice(0,7)===x.ym).map(o=>({n:o.note||L((opCats(o.type)[o.cat]||OP_OUT.other).slice(1,4)),v:o.amount,d:new Date(o.date+'T00:00:00'),cat:o.type==='in'?'income':'op'}))].map(i=>dot(i,false)).join('')}${x.incWait.map(i=>dot(i,true)).join('')}${x.todo.map(i=>dot(i,true)).join('')}<line x1="${xd(x.day)}" x2="${xd(x.day)}" y1="18" y2="70" stroke="var(--brand)" stroke-width="2"/><text x="${xd(x.day)}" y="14" font-size="11" text-anchor="middle" fill="var(--brand)" font-weight="700">${T('сегодня','today','այսօր')}</text>${ticks}${(()=>{const lw=x.proj.low;if(!lw||lw.value>=x.reserve||lw.date.slice(0,7)!==x.ym)return '';const lx=xd(+lw.date.slice(8));return `<line x1="${lx}" x2="${lx}" y1="22" y2="70" stroke="var(--c4)" stroke-width="2" stroke-dasharray="3 3"><title>${T('Самая низкая точка','Lowest point','Ամենացածր կետ')}: ${fmt(lw.value)}</title></line><text x="${lx}" y="${H-18}" font-size="10" text-anchor="middle" fill="var(--c4)">${T('мин.','low','նվազ.')} ${k1(lw.value)}</text>`})()}</svg>`;
   const todo=[...x.todo,...x.incWait].sort((a,b)=>a.d-b.d);
   return `<div class="card month"><h2>📅 ${T('Этот месяц','This month','Այս ամիսը')} · ${MONTHS()[x.t.getMonth()]} ${x.t.getFullYear()}<span class="muted" style="font-weight:500;font-size:13px"> · ${T(`день ${x.day} из ${x.D}`,`day ${x.day} of ${x.D}`,`${x.day}-րդ օր ${x.D}-ից`)}</span></h2>
-  <div class="grid">${stat(T('Заработано','Earned','Վաստակած'),'+'+fmt(x.got),'good')}${stat(T('Потрачено','Spent','Ծախսված'),'−'+fmt(x.spentAll),'bad')}${stat(T('Ещё заплатить','Still to pay','Դեռ վճարել'),'−'+fmt(x.todoAll),'warn')}${stat(T('Останется к концу месяца','Left at month end','Կմնա ամսվա վերջում'),(x.left>=0?'+':'−')+fmt(Math.abs(x.left)),x.left>=0?'good':'bad')}</div>
+  <div class="grid">${stat(T('Заработано','Earned','Վաստակած'),'+'+fmt(x.got),'good')}${stat(T('Потрачено','Spent','Ծախսված'),'−'+fmt(x.spentAll),'bad')}${stat(T('Ещё заплатить','Still to pay','Դեռ վճարել'),'−'+fmt(x.todoAll),'warn')}${stat(T('Останется на счетах к концу месяца','In your accounts at month end','Հաշիվներում կմնա ամսվա վերջում'),fmt(x.endFree),x.endFree<0?'bad':x.endFree<x.reserve?'warn':'good')}${stat(T('Месяц в плюс / в минус','Month result','Ամսվա արդյունք'),(x.left>=0?'+':'−')+fmt(Math.abs(x.left)),x.left>=0?'good':'bad')}</div>
+  ${monthVerdict(x)}
   <div class="mbars">
     <div class="mrow"><span class="mlab">💰 ${T('Доходы','Income','Եկամուտ')}</span><div class="stackbar">${seg(x.incBase,'var(--c2)',T('Зарплата и выручка','Salary & revenue','Աշխատավարձ և հասույթ'))}${seg(x.incGot.reduce((a,i)=>a+i.v,0),'var(--c5)',T('Поступления по графику','Scheduled income','Մուտքեր ըստ գրաֆիկի'))}${seg(x.opsIn,'var(--c6)',T('Разовые поступления','One-off income','Միանվագ մուտքեր'))}${seg(x.wait,'var(--c2)',T('Ещё придёт','Still to come','Դեռ կգա'),1)}</div><b class="mnum">${fmt(x.earned)}</b></div>
     <div class="mrow"><span class="mlab">💸 ${T('Расходы','Spending','Ծախսեր')}</span><div class="stackbar">${seg(x.opsOut,'var(--c7)',T('Разовые траты','One-off spending','Միանվագ ծախսեր'))}${seg(x.spentObl,'var(--c4)',T('Оплачено: кредиты, налоги, платежи','Paid: loans, taxes, payments','Վճարված՝ վարկեր, հարկեր'))}${seg(x.livingSpent,'var(--c1)',T('Ежедневные траты (по дням)','Everyday spending (by days)','Ամենօրյա ծախսեր'))}${seg(x.todoObl,'var(--c4)',T('Ещё заплатить: кредиты, налоги, платежи','To pay: loans, taxes, payments','Վճարել՝ վարկեր, հարկեր'),1)}${seg(x.livingLeft,'var(--c1)',T('Ежедневные траты до конца месяца','Everyday spending to month end','Ամենօրյա ծախսեր մինչև ամսվա վերջ'),1)}</div><b class="mnum">${fmt(x.spentAll+x.todoAll)}</b></div>
@@ -848,7 +869,7 @@ function renderKpis(){
   <button class="kpi kpibtn" data-t="accounts" title="${T('Сумма всех счетов. Нажмите, чтобы открыть «Счета»','Sum of all accounts. Click to open Accounts','Բոլոր հաշիվների գումարը։ Սեղմեք՝ բացելու «Հաշիվներ»')}"><div class="l">${T('Деньги сейчас','Money now','Գումար հիմա')} · ${S.accounts.filter(a=>ATYPE[a.type]?.[1]).length} ${T('счёт.','acc.','հաշ.')}</div><div class="v ${c.savings>0?'good':''}">${fmt(c.savings)}</div></button>
   <div class="kpi"><div class="l">${T('Доход в месяц','Monthly income','Ամսական եկամուտ')}</div><div class="v">${fmt(c.income)}</div></div>
   <div class="kpi"><div class="l">${T('Все расходы','Total spending','Ընդհանուր ծախսեր')}</div><div class="v">${fmt(c.spend)}</div></div>
-  <div class="kpi"><div class="l">${T('Остаётся','Left over','Մնում է')}</div><div class="v ${c.fcf>=0?'good':'bad'}">${fmt(c.fcf)}</div></div>
+  ${(()=>{const x=monthNow(),lw=x.proj.low,bad=lw&&lw.value<x.reserve;return `<div class="kpi"><div class="l">${T('Месяц в плюс / в минус','This month’s result','Ամսվա արդյունք')}</div><div class="v ${x.left>=0?'good':'bad'}">${(x.left>=0?'+':'−')+fmt(Math.abs(x.left))}</div>${bad?`<div class="l ${lw.value<0?'bad':'warn'}" style="margin-top:2px">${T('Мин.','Low','Նվազ.')} ${fdate(lw.date)}: ${fmt(lw.value)}</div>`:''}</div>`})()}
   <div class="kpi"><div class="l">${T('Финансовое здоровье','Financial health','Ֆինանսական առողջություն')}</div><div class="v ${c.score>=70?'good':c.score>=45?'warn':'bad'}">${c.score}/100</div></div>`;
 }
 

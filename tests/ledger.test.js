@@ -142,3 +142,9 @@ test('rollAccounts: счёт без даты получает сегодняшн
   assert.strictEqual(b.accounts[0].asOf, TODAY);
   assert.strictEqual(r.log.length, 0);
 });
+
+test('buildEntries: событие прогноза на текущий месяц без даты ставится на завтра, а не в прошлое', () => {
+  const b = fixture(); b.scen.events = [{ month: 1, type: 'oneExpense', amount: 50000, acc: -1, note: 'Now' }];
+  const e = entries(b).filter(x => x.label === 'Now');
+  assert.deepStrictEqual(e.map(x => [x.date, x.amount]), [['2026-11-07', -50000]]);
+});

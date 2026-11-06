@@ -122,7 +122,7 @@
       });
       // события прогноза
       ((b.scen || {}).events || []).forEach((ev, i) => {
-        const m = Math.round(num(ev.month)) || 1, evYm = ev.date ? ev.date.slice(0, 7) : ymAdd(tYm, m - 1), amt = Math.abs(num(ev.amount)), date = ev.date || ymDay(evYm, 1);
+        const m = Math.round(num(ev.month)) || 1, evYm = ev.date ? ev.date.slice(0, 7) : ymAdd(tYm, m - 1), amt = Math.abs(num(ev.amount)), date = ev.date || (evYm === tYm ? (addDays(today, 1).slice(0, 7) === tYm ? addDays(today, 1) : today) : ymDay(evYm, 1));
         const src = { type: 'event', i }, label = ev.note || '';
         if (evYm === ym) {
           if (ev.type === 'oneIncome') push(date, amt, 'event', src, label, { acc: ev.acc === undefined || ev.acc === '' ? -1 : num(ev.acc) });
